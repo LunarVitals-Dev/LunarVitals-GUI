@@ -1,0 +1,67 @@
+/* General Styles */
+* {
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    color: #333;
+}
+
+/* Main Window */
+QMainWindow {
+    background-color: #f0f0f0;
+}
+
+/* Header Label */
+QPushButton#header_label {
+    background-color: #0078d7;
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+}
+
+/* Table Styles */
+QTableWidget {
+    background-color: #1a1b41;
+    color: white;
+    border: 1px solid #ccc;
+    gridline-color: #ccc;
+    font-size: 14px;
+}
+
+QHeaderView::section {
+    background-color: #0078d7;
+    color: white;
+    padding: 4px;
+    border: none;
+}
+
+QTableWidget::item {
+    padding: 10px;
+}
+
+/* Refresh Button */
+QPushButton {
+    background-color: #0078d7;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px;
+}
+
+QPushButton:hover {
+    background-color: #005a9e;
+}
+
+/* Chart Widget */
+pg.PlotWidget {
+    background-color: #f0f0f0;
+}
+
+/* Custom Legend for Chart */
+.pg-legend {
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    font-size: 10px;
+}

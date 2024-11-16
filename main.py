@@ -33,7 +33,7 @@ class AstronautMonitor(QMainWindow):
         self.table.setHorizontalHeaderLabels(["TotalSteps", "TotalDistance", "VeryActiveMinutes", "Calories"])
 
         # Set the style for the table
-        self.table.setStyleSheet("font-size: 14px; padding: 8px; border: 1px solid black;")
+        self.table.setStyleSheet("font-size: 30px; padding: 8px; border: 1px solid black; background: #1a1b41;")
         
         # Set explicit column widths to ensure no truncation
         self.table.setColumnWidth(0, 180)  # Width for "TotalSteps"
@@ -128,6 +128,10 @@ class AstronautMonitor(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    with open('stylesheet.qss', 'r') as file: 
+        style_sheet = file.read() 
+        app.setStyleSheet(style_sheet)
+    
     window = AstronautMonitor()
     window.show()
     sys.exit(app.exec_())
