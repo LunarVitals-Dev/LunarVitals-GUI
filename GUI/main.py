@@ -5,6 +5,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
 from pymongo import MongoClient
+from dotenv import load_dotenv
+import os
 import pyqtgraph as pg
 import sys
 import random
@@ -12,6 +14,7 @@ import random
 
 class AstronautMonitor(QMainWindow):
     def __init__(self):
+        load_dotenv()
         super().__init__()
 
         self.setWindowTitle("Physiological Monitoring System")
@@ -19,7 +22,7 @@ class AstronautMonitor(QMainWindow):
 
         # MongoDB setup
         try:
-            self.client = MongoClient("mongodb+srv://LunarVitals:lunarvitals1010@peakfitness.i5blp.mongodb.net/")
+            self.client = MongoClient(os.getenv("MONGODB_URI"))
             self.db = self.client["vitals"]
             self.collection = self.db["sensors"]
         except Exception as e:
