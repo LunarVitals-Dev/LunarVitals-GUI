@@ -2,11 +2,12 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QWidget, QHeaderView, QLabel, QToolBar, QHBoxLayout, QSpacerItem, QSizePolicy
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
 from pymongo import MongoClient
 import pyqtgraph as pg
 import sys
+import random
 
 
 class AstronautMonitor(QMainWindow):
@@ -41,6 +42,11 @@ class AstronautMonitor(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.setWordWrap(True)
         self.main_layout.addWidget(self.table)
+        
+        # Start the timer to simulate real-time data updates
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.simulate_data)
+        self.timer.start(1000)  
 
         # Chart area (PyQtGraph)
         self.chart_widget = pg.PlotWidget()
@@ -66,6 +72,35 @@ class AstronautMonitor(QMainWindow):
 
         # Load initial data
         self.load_data()
+        
+    
+    def simulate_data(self):
+        """Simulate new data and insert into MongoDB."""
+        new_total_steps = random.randint(0, 20000)
+        new_total_distance = random.uniform(0, 50)
+        new_active_minutes = random.randint(0, 180)
+        new_calories = random.randint(0, 3000)
+
+        # Insert new simulated data into MongoDB
+        self.collection.insert_one({
+            "TotalSteps": new_total_steps,
+            "TotalDistance": new_total_distance,
+            "VeryActiveMinutes": new_active_minutes,
+            "Calories": new_calories,
+        })
+
+        # Reload the data and update the table and chart
+        self.load_data()
+
+    def update_table(self, total_steps, total_distance, active_minutes, calories):
+        """Update the table with new simulated data."""
+        row_position = self.table.rowCount()
+        self.table.insertRow(row_position)
+
+        self.table.setItem(row_position, 0, QTableWidgetItem(str(total_steps)))
+        self.table.setItem(row_position, 1, QTableWidgetItem(f"{total_distance:.2f}"))
+        self.table.setItem(row_position, 2, QTableWidgetItem(str(active_minutes)))
+        self.table.setItem(row_position, 3, QTableWidgetItem(str(calories)))
 
     def create_navbar(self):
         """Create a navigation bar (toolbar) with the logo centered."""
