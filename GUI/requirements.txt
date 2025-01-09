@@ -1,0 +1,9 @@
+PyQt5
+PyQt5-sip
+PyOpenGL
+PyWavefront
+numpy
+pymongo
+dnspython
+pyassimp
+pyqtgraph
