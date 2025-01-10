@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 import pyqtgraph as pg
 import sys
@@ -23,8 +24,8 @@ class AstronautMonitor(QMainWindow):
         # MongoDB setup
         try:
             self.client = MongoClient(os.getenv("MONGODB_URI"))
-            self.db = self.client["vitals"]
-            self.collection = self.db["sensors"]
+            self.db = self.client["LunarVitalsDB"]
+            self.collection = self.db["SensorData"]
         except Exception as e:
             print(f"Error connecting to MongoDB: {e}")
             sys.exit(1)
@@ -40,16 +41,11 @@ class AstronautMonitor(QMainWindow):
         # Table widget
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Total Steps", "Total Distance", "Active Minutes", "Calories"])
+        self.table.setHorizontalHeaderLabels(["Timestamp", "Value (mV)"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setDefaultSectionSize(30)
         self.table.setWordWrap(True)
         self.main_layout.addWidget(self.table)
-        
-        # Start the timer to simulate real-time data updates
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.simulate_data)
-        self.timer.start(1000)  
 
         # Chart area (PyQtGraph)
         self.chart_widget = pg.PlotWidget()
@@ -76,34 +72,14 @@ class AstronautMonitor(QMainWindow):
         # Load initial data
         self.load_data()
         
-    
-    def simulate_data(self):
-        """Simulate new data and insert into MongoDB."""
-        new_total_steps = random.randint(0, 20000)
-        new_total_distance = random.uniform(0, 50)
-        new_active_minutes = random.randint(0, 180)
-        new_calories = random.randint(0, 3000)
 
-        # Insert new simulated data into MongoDB
-        self.collection.insert_one({
-            "TotalSteps": new_total_steps,
-            "TotalDistance": new_total_distance,
-            "VeryActiveMinutes": new_active_minutes,
-            "Calories": new_calories,
-        })
-
-        # Reload the data and update the table and chart
-        self.load_data()
-
-    def update_table(self, total_steps, total_distance, active_minutes, calories):
+    def update_table(self, timestamp, respiratory):
         """Update the table with new simulated data."""
         row_position = self.table.rowCount()
         self.table.insertRow(row_position)
 
-        self.table.setItem(row_position, 0, QTableWidgetItem(str(total_steps)))
-        self.table.setItem(row_position, 1, QTableWidgetItem(f"{total_distance:.2f}"))
-        self.table.setItem(row_position, 2, QTableWidgetItem(str(active_minutes)))
-        self.table.setItem(row_position, 3, QTableWidgetItem(str(calories)))
+        self.table.setItem(row_position, 0, QTableWidgetItem(timestamp))
+        self.table.setItem(row_position, 1, QTableWidgetItem(str(respiratory)))
 
     def create_navbar(self):
         """Create a navigation bar (toolbar) with the logo centered."""
@@ -143,48 +119,49 @@ class AstronautMonitor(QMainWindow):
     def load_data(self):
         """Load data from MongoDB and display it in the table and chart."""
         try:
-            self.table.setRowCount(0) 
-            total_steps = []
-            total_distance = []
-            active_minutes = []
-            calories = []
+            self.table.setRowCount(0)  # Clear existing table rows
+            timestamp = []
+            respiratory = []
 
+            # Fetch and process non-zero records
             for doc in self.collection.find():
-                row_position = self.table.rowCount()
-                self.table.insertRow(row_position)
+                respiratory_value = doc.get('value', 0)
+                
+                # Skip records with zero value
+                if respiratory_value == 0:
+                    continue
 
                 # Format data
-                total_steps_value = f"{doc.get('TotalSteps', 0)}"
-                total_distance_value = f"{doc.get('TotalDistance', 0):.2f}"
-                active_minutes_value = f"{doc.get('VeryActiveMinutes', 0)}"
-                calories_value = f"{doc.get('Calories', 0)}"
+                timestamp_value = 0
+                if isinstance(doc.get('timestamp'), datetime):
+                    timestamp_value = int(doc.get('timestamp').timestamp() * 1000)  # Convert to milliseconds
+                elif isinstance(doc.get('timestamp'), int):
+                    timestamp_value = doc.get('timestamp')  # Use the integer directly
 
-                self.table.setItem(row_position, 0, QTableWidgetItem(total_steps_value))
-                self.table.setItem(row_position, 1, QTableWidgetItem(total_distance_value))
-                self.table.setItem(row_position, 2, QTableWidgetItem(active_minutes_value))
-                self.table.setItem(row_position, 3, QTableWidgetItem(calories_value))
+                print(f"Parsed: Timestamp={timestamp_value}, Value={respiratory_value}")  # Debugging
+
+                # Update table
+                row_position = self.table.rowCount()
+                self.table.insertRow(row_position)
+                self.table.setItem(row_position, 0, QTableWidgetItem(str(timestamp_value)))
+                self.table.setItem(row_position, 1, QTableWidgetItem(str(respiratory_value)))
 
                 # Collect data for chart
-                total_steps.append(doc.get("TotalSteps", 0))
-                total_distance.append(doc.get("TotalDistance", 0))
-                active_minutes.append(doc.get("VeryActiveMinutes", 0))
-                calories.append(doc.get("Calories", 0))
+                timestamp.append(timestamp_value)
+                respiratory.append(respiratory_value)
 
             # Plot data on chart
-            self.plot_data(total_steps, total_distance, active_minutes, calories)
+            self.plot_data(timestamp, respiratory)
         except Exception as e:
             print(f"Error loading data: {e}")
 
-    def plot_data(self, total_steps, total_distance, active_minutes, calories):
+
+    def plot_data(self, timestamp, respiratory):
         """Plot data on the chart widget."""
         self.chart_widget.clear()  # Clear existing plots
-        x = range(len(total_steps))
+        x = range(len(respiratory))
 
-        # Plot each data series
-        self.chart_widget.plot(x, total_steps, pen='r', name="Total Steps")
-        self.chart_widget.plot(x, total_distance, pen='g', name="Total Distance")
-        self.chart_widget.plot(x, active_minutes, pen='b', name="Active Minutes")
-        self.chart_widget.plot(x, calories, pen='y', name="Calories")
+        self.chart_widget.plot(x, respiratory, pen='g', name="Respiratory")
 
         # Add legend if not already present
         if not hasattr(self, "legend_added"):
