@@ -638,6 +638,18 @@ int main(void)
     int err = 0;
 
     configure_gpio();
+// 	struct bt_le_oob oob_data;
+// 	bt_le_oob_get_local(BT_ID_DEFAULT, &oob_data);
+
+// 	if (err) {
+//     printk("Failed to get MAC address, error %d\n", err);
+// } else {
+//     printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
+//            oob_data.addr.a.val[5], oob_data.addr.a.val[4],
+//            oob_data.addr.a.val[3], oob_data.addr.a.val[2],
+//            oob_data.addr.a.val[1], oob_data.addr.a.val[0]);
+//}
+
     printk("Hi.\n");
     
     // Initialize UART
