@@ -35,6 +35,11 @@
 #include <zephyr/logging/log.h>
 
 #include <bluetooth/services/nus.h>
+
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/adc.h>
 #define LOG_MODULE_NAME peripheral_uart
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
@@ -57,6 +62,29 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define UART_WAIT_FOR_RX CONFIG_BT_NUS_UART_RX_WAIT_TIME
 // Define the interval at which to send the message (e.g., every 5 seconds)
 #define MESSAGE_INTERVAL K_MSEC(5000)
+
+//------------
+#define ADC_REF_VOLTAGE_MV 600 // Internal reference in mV
+#define ADC_GAIN (1.0 / 6.0)    // Gain of 1/6
+#define ADC_RESOLUTION 4096     // 12-bit resolution
+
+/* ADC channel configuration via Device Tree */
+static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
+
+/* ADC buffer and sequence configuration */
+static int16_t buf;
+static struct adc_sequence sequence = {
+    .buffer = &buf,
+    .buffer_size = sizeof(buf), 
+    /* Optional calibration */
+    //.calibrate = true,
+};
+
+int32_t convert_to_mv(int16_t raw_value) {
+    return (int32_t)((raw_value * ADC_REF_VOLTAGE_MV * (1.0 / ADC_GAIN)) / ADC_RESOLUTION);
+}
+//--------------
+
 static K_SEM_DEFINE(ble_init_ok, 0, 1);
 
 static struct bt_conn *current_conn;
@@ -665,11 +693,45 @@ int main(void)
 
     LOG_INF("Advertising started");
 
+
+	//----------------------
+	    /* Verify ADC readiness */
+    if (!adc_is_ready_dt(&adc_channel)) {
+        printf("ADC controller device %s not ready\n", adc_channel.dev->name);
+        return;
+    }
+
+    /* Configure ADC channel */
+    int err1 = adc_channel_setup_dt(&adc_channel);
+    if (err1 < 0) {
+        printf("Could not setup ADC channel (%d)\n", err);
+        return;
+    }
+
+    /* Initialize ADC sequence */
+    err1 = adc_sequence_init_dt(&adc_channel, &sequence);
+    if (err1 < 0) {
+        printf("Could not initialize ADC sequence (%d)\n", err);
+        return;
+    }
+	//-------------------------
     // Main loop to blink LED to indicate status
     for (;;) {
+		err1 = adc_read(adc_channel.dev, &sequence);
+        if (err1 < 0) {
+            printf("ADC read failed (%d)\n", err);
+        } else {
+            int32_t val_mv = convert_to_mv(buf);
+            //printf("Raw ADC value: %d\n", buf);
+            uint32_t timestamp = k_uptime_get(); // Get the current uptime in milliseconds
+            printf("%u %d\n", timestamp, val_mv);
+            char message[50]; // Buffer to hold the formatted string
+			snprintf(message, sizeof(message), "%d\r\n", val_mv);
+			send_message_to_bluetooth(message);
+        }
         dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);
-		send_message_to_bluetooth("Hello from Nordic!\r\n");
-        k_sleep(MESSAGE_INTERVAL);
+		
+        k_sleep(K_MSEC(100));
     }
 
 }
