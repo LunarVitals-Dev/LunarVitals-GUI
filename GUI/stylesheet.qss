@@ -50,7 +50,6 @@ QTableWidget::item {
     padding: 10px;
 }
 
-/* Refresh Button */
 QPushButton {
     background-color: #FF5733;
     font-size: 16px;
