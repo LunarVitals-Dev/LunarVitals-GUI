@@ -7,39 +7,40 @@
 /** @file
  *  @brief Nordic UART Bridge Service (NUS) sample
  */
-#include <uart_async_adapter.h>
+// #include <uart_async_adapter.h>
 
-#include <zephyr/types.h>
-#include <zephyr/kernel.h>
-#include <zephyr/drivers/uart.h>
-#include <zephyr/usb/usb_device.h>
+// #include <zephyr/types.h>
+// #include <zephyr/kernel.h>
+// #include <zephyr/drivers/uart.h>
+// #include <zephyr/usb/usb_device.h>
 
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include <soc.h>
+// #include <zephyr/device.h>
+// #include <zephyr/devicetree.h>
+// #include <soc.h>
 
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/uuid.h>
-#include <zephyr/bluetooth/gatt.h>
-#include <zephyr/bluetooth/hci.h>
+// #include <zephyr/bluetooth/bluetooth.h>
+// #include <zephyr/bluetooth/uuid.h>
+// #include <zephyr/bluetooth/gatt.h>
+// #include <zephyr/bluetooth/hci.h>
 
-#include <bluetooth/services/nus.h>
+// #include <bluetooth/services/nus.h>
 
-#include <dk_buttons_and_leds.h>
+// #include <dk_buttons_and_leds.h>
 
-#include <zephyr/settings/settings.h>
+// #include <zephyr/settings/settings.h>
 
-#include <stdio.h>
-#include <string.h>
+// #include <stdio.h>
+// #include <string.h>
 
-#include <zephyr/logging/log.h>
+// #include <zephyr/logging/log.h>
 
-#include <bluetooth/services/nus.h>
+// #include <bluetooth/services/nus.h>
 
-#include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/devicetree.h>
-#include <zephyr/drivers/adc.h>
+// #include <zephyr/kernel.h>
+// #include <zephyr/device.h>
+// #include <zephyr/devicetree.h>
+// #include <zephyr/drivers/adc.h>
+#include "adc.h"
 #define LOG_MODULE_NAME peripheral_uart
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
@@ -63,26 +64,27 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 // Define the interval at which to send the message (e.g., every 5 seconds)
 #define MESSAGE_INTERVAL K_MSEC(5000)
 
+
 //------------
-#define ADC_REF_VOLTAGE_MV 600 // Internal reference in mV
-#define ADC_GAIN (1.0 / 6.0)    // Gain of 1/6
-#define ADC_RESOLUTION 4096     // 12-bit resolution
+// #define ADC_REF_VOLTAGE_MV 600 // Internal reference in mV
+// #define ADC_GAIN (1.0 / 6.0)    // Gain of 1/6
+// #define ADC_RESOLUTION 4096     // 12-bit resolution
 
-/* ADC channel configuration via Device Tree */
-static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
+// /* ADC channel configuration via Device Tree */
+// static const struct adc_dt_spec adc_channel = ADC_DT_SPEC_GET(DT_PATH(zephyr_user));
 
-/* ADC buffer and sequence configuration */
-static int16_t buf;
-static struct adc_sequence sequence = {
-    .buffer = &buf,
-    .buffer_size = sizeof(buf), 
-    /* Optional calibration */
-    //.calibrate = true,
-};
+// /* ADC buffer and sequence configuration */
+// static int16_t buf;
+// static struct adc_sequence sequence = {
+//     .buffer = &buf,
+//     .buffer_size = sizeof(buf), 
+//     /* Optional calibration */
+//     //.calibrate = true,
+// };
 
-int32_t convert_to_mv(int16_t raw_value) {
-    return (int32_t)((raw_value * ADC_REF_VOLTAGE_MV * (1.0 / ADC_GAIN)) / ADC_RESOLUTION);
-}
+// int32_t convert_to_mv(int16_t raw_value) {
+//     return (int32_t)((raw_value * ADC_REF_VOLTAGE_MV * (1.0 / ADC_GAIN)) / ADC_RESOLUTION);
+// }
 //--------------
 
 static K_SEM_DEFINE(ble_init_ok, 0, 1);
@@ -373,6 +375,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	}
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	printk("Connected %s\n", addr);
 	LOG_INF("Connected %s", addr);
 
 	current_conn = bt_conn_ref(conn);
@@ -385,7 +388,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	char addr[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
+	printk("Disconnected: %s (reason %u)", addr, reason);
 	LOG_INF("Disconnected: %s (reason %u)", addr, reason);
 
 	if (auth_conn) {
@@ -463,7 +466,7 @@ static void pairing_complete(struct bt_conn *conn, bool bonded)
 	char addr[BT_ADDR_LE_STR_LEN];
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
+	printf("Pairing completed: %s, bonded: %d", addr, bonded);
 	LOG_INF("Pairing completed: %s, bonded: %d", addr, bonded);
 }
 
@@ -571,7 +574,7 @@ static void num_comp_reply(bool accept)
 void button_changed(uint32_t button_state, uint32_t has_changed)
 {
 	uint32_t buttons = button_state & has_changed;
-
+	printf("button changed");
 	if (auth_conn) {
 		if (buttons & KEY_PASSKEY_ACCEPT) {
 			num_comp_reply(true);
@@ -598,13 +601,13 @@ static void configure_gpio(void)
 	err = dk_leds_init();
 	if (err) {
 		LOG_ERR("Cannot init LEDs (err: %d)", err);
-	}
+	} 
 }
 
 
 
 void send_message_to_bluetooth(const char *msg)
-{ printk("Sending Message.\n");
+{ //printk("Sending Message.\n");
     struct uart_data_t nus_data = {
         .len = 0,
     };
@@ -638,17 +641,6 @@ int main(void)
     int err = 0;
 
     configure_gpio();
-// 	struct bt_le_oob oob_data;
-// 	bt_le_oob_get_local(BT_ID_DEFAULT, &oob_data);
-
-// 	if (err) {
-//     printk("Failed to get MAC address, error %d\n", err);
-// } else {
-//     printf("MAC Address: %02X:%02X:%02X:%02X:%02X:%02X\n",
-//            oob_data.addr.a.val[5], oob_data.addr.a.val[4],
-//            oob_data.addr.a.val[3], oob_data.addr.a.val[2],
-//            oob_data.addr.a.val[1], oob_data.addr.a.val[0]);
-//}
 
     printk("Hi.\n");
     
@@ -702,45 +694,31 @@ int main(void)
         LOG_ERR("Advertising failed to start (err %d)", err);
         return 0;
     }
-
+	printk("started pairing\n");
     LOG_INF("Advertising started");
 
 
 	//----------------------
 	    /* Verify ADC readiness */
-    if (!adc_is_ready_dt(&adc_channel)) {
-        printf("ADC controller device %s not ready\n", adc_channel.dev->name);
-        return;
-    }
+    adc_init();
 
-    /* Configure ADC channel */
-    int err1 = adc_channel_setup_dt(&adc_channel);
-    if (err1 < 0) {
-        printf("Could not setup ADC channel (%d)\n", err);
-        return;
-    }
-
-    /* Initialize ADC sequence */
-    err1 = adc_sequence_init_dt(&adc_channel, &sequence);
-    if (err1 < 0) {
-        printf("Could not initialize ADC sequence (%d)\n", err);
-        return;
-    }
 	//-------------------------
     // Main loop to blink LED to indicate status
     for (;;) {
-		err1 = adc_read(adc_channel.dev, &sequence);
-        if (err1 < 0) {
-            printf("ADC read failed (%d)\n", err);
-        } else {
-            int32_t val_mv = convert_to_mv(buf);
-            //printf("Raw ADC value: %d\n", buf);
-            uint32_t timestamp = k_uptime_get(); // Get the current uptime in milliseconds
-            printf("%u %d\n", timestamp, val_mv);
-            char message[50]; // Buffer to hold the formatted string
-			snprintf(message, sizeof(message), "%d\r\n", val_mv);
-			send_message_to_bluetooth(message);
-        }
+
+        get_adc_data();
+		// err1 = adc_read(adc_channel.dev, &sequence);
+        // if (err1 < 0) {
+        //     printf("ADC read failed (%d)\n", err);
+        // } else {
+        //     int32_t val_mv = convert_to_mv(buf);
+        //     //printf("Raw ADC value: %d\n", buf);
+        //     uint32_t timestamp = k_uptime_get(); // Get the current uptime in milliseconds
+        //    // printf("%u %d\n", timestamp, val_mv);
+        //     char message[50]; // Buffer to hold the formatted string
+		// 	snprintf(message, sizeof(message), "%d\r\n", val_mv);
+		// 	send_message_to_bluetooth(message);
+        // }
         dk_set_led(RUN_STATUS_LED, (++blink_status) % 2);
 		
         k_sleep(K_MSEC(100));

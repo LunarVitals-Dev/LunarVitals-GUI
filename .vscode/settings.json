@@ -1,5 +1,22 @@
 {
     "nrf-connect.applications": [
         "${workspaceFolder}\\peripheral_uart"
-    ]
+    ],
+    "files.associations": {
+        "compare": "cpp",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp",
+        "bluetooth.h": "c",
+        "dk_buttons_and_leds.h": "c",
+        "log.h": "c",
+        "gatt.h": "c",
+        "bluetoothhelper.h": "c",
+        "kernel.h": "c",
+        "usb_device.h": "c",
+        "device.h": "c",
+        "adc.h": "c",
+        "devicetree.h": "c",
+        "nus.h": "c"
+    }
 }
