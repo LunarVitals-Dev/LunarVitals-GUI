@@ -17,6 +17,7 @@
         "device.h": "c",
         "adc.h": "c",
         "devicetree.h": "c",
-        "nus.h": "c"
+        "nus.h": "c",
+        "uart_async_adapter.h": "c"
     }
 }

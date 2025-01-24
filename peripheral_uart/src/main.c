@@ -41,6 +41,11 @@
 // #include <zephyr/devicetree.h>
 // #include <zephyr/drivers/adc.h>
 #include "adc.h"
+
+#include "MPU6050.h"
+#include "MLX90614.h"
+#include "BMP280.h"
+#include "i2c.h"
 #define LOG_MODULE_NAME peripheral_uart
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
@@ -278,6 +283,7 @@ static int uart_init(void)
 		err = usb_enable(NULL);
 		if (err && (err != -EALREADY)) {
 			LOG_ERR("Failed to enable USB");
+			printk("failed");
 			return err;
 		}
 	}
@@ -302,6 +308,7 @@ static int uart_init(void)
 	if (err) {
 		k_free(rx);
 		LOG_ERR("Cannot initialize UART callback");
+		printk("failed callback");
 		return err;
 	}
 
@@ -320,10 +327,12 @@ static int uart_init(void)
 		LOG_INF("DTR set");
 		err = uart_line_ctrl_set(uart, UART_LINE_CTRL_DCD, 1);
 		if (err) {
+			printk("failed DCD");
 			LOG_WRN("Failed to set DCD, ret code %d", err);
 		}
 		err = uart_line_ctrl_set(uart, UART_LINE_CTRL_DSR, 1);
 		if (err) {
+			printk("failed DSR");
 			LOG_WRN("Failed to set DSR, ret code %d", err);
 		}
 	}
@@ -352,12 +361,13 @@ static int uart_init(void)
 		k_free(rx);
 		k_free(tx);
 		LOG_ERR("Cannot display welcome message (err: %d)", err);
-		return err;
+		printk("failed display");
 	}
 
 	err = uart_rx_enable(uart, rx->data, sizeof(rx->data), UART_WAIT_FOR_RX);
 	if (err) {
 		LOG_ERR("Cannot enable uart reception (err: %d)", err);
+		printk("failed uart receptions");
 		/* Free the rx buffer only because the tx buffer will be handled in the callback */
 		k_free(rx);
 	}
@@ -647,6 +657,7 @@ int main(void)
     // Initialize UART
     err = uart_init();
     if (err) {
+		printk("error.\n");
         error();
     }
 
@@ -701,12 +712,13 @@ int main(void)
 	//----------------------
 	    /* Verify ADC readiness */
     adc_init();
-
+	//i2c_init();
 	//-------------------------
     // Main loop to blink LED to indicate status
     for (;;) {
-
+		printk("Getting Data.\n");
         get_adc_data();
+		//i2c_read_data();
 		// err1 = adc_read(adc_channel.dev, &sequence);
         // if (err1 < 0) {
         //     printf("ADC read failed (%d)\n", err);

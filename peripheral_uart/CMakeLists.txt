@@ -13,6 +13,10 @@ target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_sources(app PRIVATE
   src/main.c
   src/adc.c
+  # src/BMP280.c
+  # src/i2c.c
+  # src/MLX90614.c
+  # src/MPU6050.c
 )
 
 # # NORDIC SDK APP START

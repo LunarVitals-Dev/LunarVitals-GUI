@@ -10,7 +10,9 @@ from matplotlib.figure import Figure
 
 # Replace with your Nordic device's MAC address and UUIDs
 #NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
-NORDIC_DEVICE_MAC = "FB:F2:39:B0:84:16"
+#NORDIC_DEVICE_MAC = "FB:F2:39:B0:84:16" #for vic
+NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48" #for vic
+
 UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
 # MongoDB Setup

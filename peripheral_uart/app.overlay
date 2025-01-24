@@ -3,6 +3,9 @@
  *
  * SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
  */
+//  &i2c1{
+// 	status = "okay";
+//  };
 
 / {
 	
@@ -16,7 +19,9 @@
 	};
 
 };
-
+ &i2c1{
+	status = "okay";
+ };
 
 &adc {
 	#address-cells = <1>;

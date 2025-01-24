@@ -71,7 +71,8 @@ void get_adc_data() {
             
             // Format the message to send via Bluetooth
             char message[50];
-            snprintf(message, sizeof(message), "Channel %d: %d mV, Timestamp: %u\r\n", i, val_mv, timestamp);
+            //snprintf(message, sizeof(message), "Channel %d: %d mV, Timestamp: %u\r\n", i, val_mv, timestamp);
+            snprintf(message, sizeof(message), "%d\r\n",val_mv);
             printf(message);
             // Send the message over Bluetooth
             send_message_to_bluetooth(message);
