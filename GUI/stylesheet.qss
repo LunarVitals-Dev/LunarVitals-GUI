@@ -58,6 +58,21 @@ QPushButton {
     padding: 10px;
 }
 
+QComboBox {
+    color: black; 
+    font-size: 16px; 
+    background-color: white; 
+    border: 1px solid gray; 
+    padding: 4px;
+}
+
+QComboBox QAbstractItemView {
+    color: black; 
+    background-color: white;
+    selection-background-color: lightblue;
+    selection-color: black;
+}
+
 QPushButton:hover {
     background-color: #D94E2F;
 }

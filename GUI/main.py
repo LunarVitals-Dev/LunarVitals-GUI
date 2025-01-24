@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QWidget, QHeaderView, QLabel, QToolBar, QHBoxLayout, QSpacerItem, QSizePolicy, QStackedWidget
+    QPushButton, QWidget, QHeaderView, QLabel, QToolBar, QHBoxLayout, QSpacerItem, QSizePolicy, 
+    QStackedWidget, QComboBox
 )
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont, QPixmap
@@ -25,7 +26,7 @@ class AstronautMonitor(QMainWindow):
         try:
             self.client = MongoClient(os.getenv("MONGODB_URI"))
             self.db = self.client["LunarVitalsDB"]
-            self.collection = self.db["SensorData"]
+            self.collection = self.db["sensor_data"]
         except Exception as e:
             print(f"Error connecting to MongoDB: {e}")
             sys.exit(1)
@@ -67,57 +68,46 @@ class AstronautMonitor(QMainWindow):
         self.home_page.setLayout(layout)
 
         # Table widget
-        self.table = QTableWidget()
-        self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Timestamp", "Value (mV)"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.verticalHeader().setDefaultSectionSize(30)
-        self.table.setWordWrap(True)
-        layout.addWidget(self.table)
+        # self.table = QTableWidget()
+        # self.table.setColumnCount(4)
+        # self.table.setHorizontalHeaderLabels(["Timestamp", "Value (mV)"])
+        # self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # self.table.verticalHeader().setDefaultSectionSize(30)
+        # self.table.setWordWrap(True)
+        # layout.addWidget(self.table)
 
-        # Chart area (PyQtGraph)
         self.chart_widget1 = pg.PlotWidget()
-        self.chart_widget1.setTitle("Respiratory Rate", size='16pt')
-        self.chart_widget1.setLabel('left', 'Value', size='10pt')
-        self.chart_widget1.setLabel('bottom', 'Time (Records)', size='10pt')
-        self.chart_widget1.getAxis('left').setStyle(tickFont=QFont("Arial", 10))
-        self.chart_widget1.getAxis('bottom').setStyle(tickFont=QFont("Arial", 10))
-        layout.addWidget(self.chart_widget1, stretch=1)
-        
-        # Chart area (PyQtGraph)
         self.chart_widget2 = pg.PlotWidget()
-        self.chart_widget2.setTitle("Motion Detection", size='16pt')
-        self.chart_widget2.setLabel('left', 'Value', size='10pt')
-        self.chart_widget2.setLabel('bottom', 'Time (Records)', size='10pt')
-        self.chart_widget2.getAxis('left').setStyle(tickFont=QFont("Arial", 10))
-        self.chart_widget2.getAxis('bottom').setStyle(tickFont=QFont("Arial", 10))
-        layout.addWidget(self.chart_widget2, stretch=1)
-        
-        # Chart area (PyQtGraph)
         self.chart_widget3 = pg.PlotWidget()
-        self.chart_widget3.setTitle("Temperature", size='16pt')
-        self.chart_widget3.setLabel('left', 'Value', size='10pt')
-        self.chart_widget3.setLabel('bottom', 'Time (Records)', size='10pt')
-        self.chart_widget3.getAxis('left').setStyle(tickFont=QFont("Arial", 10))
-        self.chart_widget3.getAxis('bottom').setStyle(tickFont=QFont("Arial", 10))
-        layout.addWidget(self.chart_widget3, stretch=1)
+        self.chart_widget4 = pg.PlotWidget()
+        self.chart_widget5 = pg.PlotWidget()
+
+        # Add each chart widget to the layout
+        layout.addWidget(self.chart_widget1)
+        layout.addWidget(self.chart_widget2)
+        layout.addWidget(self.chart_widget3)
+        layout.addWidget(self.chart_widget4)
+        layout.addWidget(self.chart_widget5)
 
     def init_ml_page(self):
         layout = QVBoxLayout()
+        
+        ACTIVITIES = ["Running", "Walking", "Cycling", "Jumping", "Lifting"]
 
         # Header
         header_label = QLabel("Machine Learning Dashboard")
         header_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(header_label)
 
-        # Test Button
-        test_button = QPushButton("Click Me")
-        layout.addWidget(test_button)
+        activity_combobox = QComboBox()
+        activity_combobox.addItems(ACTIVITIES)
+        activity_combobox.setCurrentIndex(0)
+        layout.addWidget(activity_combobox)
 
         # Dummy Chart
         dummy_chart = pg.PlotWidget()
         dummy_chart.setTitle("Dummy Graph", size="16pt")
-        dummy_chart.plot([1, 2, 3, 4], [10, 20, 30, 40])  # Simple line plot
+        dummy_chart.plot([1, 2, 3, 4], [10, 20, 30, 40]) 
         layout.addWidget(dummy_chart)
 
         # Test Label
@@ -146,13 +136,13 @@ class AstronautMonitor(QMainWindow):
         layout.addWidget(about_text)
         
 
-    def update_table(self, timestamp, respiratory):
-        """Update the table with new simulated data."""
-        row_position = self.table.rowCount()
-        self.table.insertRow(row_position)
+    # def update_table(self, timestamp, respiratory):
+    #     """Update the table with new simulated data."""
+    #     row_position = self.table.rowCount()
+    #     self.table.insertRow(row_position)
 
-        self.table.setItem(row_position, 0, QTableWidgetItem(timestamp))
-        self.table.setItem(row_position, 1, QTableWidgetItem(str(respiratory)))
+    #     self.table.setItem(row_position, 0, QTableWidgetItem(timestamp))
+    #     self.table.setItem(row_position, 1, QTableWidgetItem(str(respiratory)))
 
     def create_navbar(self):
         """Create a navigation bar (toolbar) with the logo centered and navigation buttons."""
@@ -196,62 +186,61 @@ class AstronautMonitor(QMainWindow):
         self.addToolBar(navbar)
 
     def load_data(self):
-        """Load data from MongoDB and display it in the table and chart."""
         try:
-            self.table.setRowCount(0)  # Clear existing table rows
-            timestamp = []
-            respiratory = []
+            #self.table.setRowCount(0) 
+            accel_x, accel_y, accel_z = [], [], []
+            gyro_x, gyro_y, gyro_z = [], [], []
+            obj_temp, temperature = [], []
+            pressure = []
+            resp = []
 
-            # Fetch and process non-zero records
             for doc in self.collection.find():
-                respiratory_value = doc.get('value', 0)
-                
-                # Skip records with zero value
-                if respiratory_value == 0:
-                    continue
+                # Process accelerometer data
+                accel_data = doc.get('Accelerometer', {})
+                accel_x.append(accel_data.get('X_g', 0))
+                accel_y.append(accel_data.get('Y_g', 0))
+                accel_z.append(accel_data.get('Z_g', 0))
 
-                # Format data
-                timestamp_value = 0
-                if isinstance(doc.get('timestamp'), datetime):
-                    timestamp_value = int(doc.get('timestamp').timestamp() * 1000)  # Convert to milliseconds
-                elif isinstance(doc.get('timestamp'), int):
-                    timestamp_value = doc.get('timestamp')  # Use the integer directly
+                # Process gyroscope data
+                gyro_data = doc.get('Gyroscope', {})
+                gyro_x.append(gyro_data.get('X_deg_per_s', 0))
+                gyro_y.append(gyro_data.get('Y_deg_per_s', 0))
+                gyro_z.append(gyro_data.get('Z_deg_per_s', 0))
 
-                # Update table
-                row_position = self.table.rowCount()
-                self.table.insertRow(row_position)
-                self.table.setItem(row_position, 0, QTableWidgetItem(str(timestamp_value)))
-                self.table.setItem(row_position, 1, QTableWidgetItem(str(respiratory_value)))
+                # Process other sensors
+                obj_temp.append(doc.get('ObjectTemperature', {}).get('Celsius', 0))
+                temperature.append(doc.get('Temperature', {}).get('Celsius', 0))
+                pressure.append(doc.get('Pressure', {}).get('hPa', 0))
+                resp.append(doc.get('RespiratoryRate', {}).get('Value_mV', 0))
 
-                # Collect data for chart
-                timestamp.append(timestamp_value)
-                respiratory.append(respiratory_value)
+            # Plot each sensor's data
+            self.plot_sensor_data(self.chart_widget1, accel_x, accel_y, accel_z, title="Accelerometer (g)")
+            self.plot_sensor_data(self.chart_widget2, gyro_x, gyro_y, gyro_z, title="Gyroscope (°/s)")
+            self.plot_double_sensor(self.chart_widget3, obj_temp, temperature, title="Ambient vs Object Temperature (°C)")
+            self.plot_single_sensor(self.chart_widget4, pressure, title="Pressure (hPa)")
+            self.plot_single_sensor(self.chart_widget5, resp, title="Respiratory Rate (mV)")
 
-            # Plot data on chart
-            self.plot_data(timestamp, respiratory)
         except Exception as e:
             print(f"Error loading data: {e}")
+            
+    def plot_sensor_data(self, chart, x_data, y_data, z_data, title=""):
+        chart.clear()
+        chart.setTitle(title, size='16pt')
+        chart.plot(x_data, pen='r')
+        chart.plot(y_data, pen='g')
+        chart.plot(z_data, pen='b')
 
-
-    def plot_data(self, timestamp, respiratory):
-        """Plot data on the chart widget."""
-        self.chart_widget1.clear()
-        self.chart_widget2.clear()
-        self.chart_widget3.clear()
-        x = range(len(respiratory))
-
-        self.chart_widget1.plot(x, respiratory, pen='r', name="Respiratory")
-        self.chart_widget2.plot(x, respiratory, pen='g', name="Motion")
-        self.chart_widget3.plot(x, respiratory, pen='b', name="Temperature")
-
-        # Add legend if not already present
-        if not hasattr(self, "legend_added"):
-            self.chart_widget1.addLegend(offset=(0, 0))
-            self.chart_widget2.addLegend(offset=(0, 0))
-            self.chart_widget3.addLegend(offset=(0, 0))
-            self.legend_added = True
-
-
+    def plot_single_sensor(self, chart, data, title=""):
+        chart.clear()
+        chart.setTitle(title, size='16pt')
+        chart.plot(data, pen='r')
+        
+    def plot_double_sensor(self, chart, data1, data2, title=""):
+        chart.clear()
+        chart.setTitle(title, size='16pt')
+        chart.plot(data1, pen='r')
+        chart.plot(data2, pen='g')
+        
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     with open('stylesheet.qss', 'r') as file:
