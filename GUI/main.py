@@ -21,10 +21,9 @@ class AstronautMonitor(QMainWindow):
 
         self.setWindowTitle("Physiological Monitoring System")
         self.resize(1024, 768)
-
+        
         # Initialize data buffers with max length of 200
         self.init_data_buffers()
-        
         self.last_timestamp = None
 
         # MongoDB setup
@@ -35,10 +34,6 @@ class AstronautMonitor(QMainWindow):
         except Exception as e:
             print(f"Error connecting to MongoDB: {e}")
             sys.exit(1)
-            
-        # Main stacked widget to hold pages
-        self.central_stack = QStackedWidget()
-        self.setCentralWidget(self.central_stack)
 
         # Set common chart style
         self.chart_style = {
@@ -49,18 +44,25 @@ class AstronautMonitor(QMainWindow):
             'axis_color': '#062a61',
             'grid_color': '#e0e0e0'
         }
-
+        
+        self.initUI()
+        
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.load_data)
+        self.timer.start(100)
+        
+    def initUI(self):
+        self.central_stack = QStackedWidget()
+        self.setCentralWidget(self.central_stack)
+        
         # Create pages
         self.home_page = QWidget()
-        self.ml_page = QWidget()
         self.about_page = QWidget()
         
         self.init_home_page()
-        self.init_ml_page()
         self.init_about_page()
 
         self.central_stack.addWidget(self.home_page)
-        self.central_stack.addWidget(self.ml_page)
         self.central_stack.addWidget(self.about_page)
 
         # Create navigation bar
@@ -68,10 +70,6 @@ class AstronautMonitor(QMainWindow):
 
         # Load initial data
         self.load_data()
-        
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self.load_data)
-        self.timer.start(100)
 
     def init_data_buffers(self):
         self.accel_x = deque(maxlen=200)
@@ -82,8 +80,48 @@ class AstronautMonitor(QMainWindow):
         self.gyro_z = deque(maxlen=200)
         self.obj_temp = deque(maxlen=200)
         self.amb_temp = deque(maxlen=200)
-        self.pressure = deque(maxlen=200)
         self.resp = deque(maxlen=200)
+
+    def init_home_page(self):    
+        layout = QVBoxLayout()
+        
+        # Header
+        header_label = QLabel("Physiological Monitoring Dashboard")
+        header_label.setObjectName("pageHeader")
+        header_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(header_label)
+        
+        # Buttons container
+        buttons_widget = QWidget()
+        buttons_layout = QHBoxLayout()
+        buttons_widget.setLayout(buttons_layout)
+        
+        # Create buttons
+        self.accel_button = QPushButton("Accelerometer")
+        self.gyro_button = QPushButton("Gyroscope")
+        self.temp_button = QPushButton("Temperature")
+        self.resp_button = QPushButton("Respiratory")
+        
+        # Add buttons to layout
+        buttons_layout.addWidget(self.accel_button)
+        buttons_layout.addWidget(self.gyro_button)
+        buttons_layout.addWidget(self.temp_button)
+        buttons_layout.addWidget(self.resp_button)
+        
+        # Connect button signals
+        self.accel_button.clicked.connect(lambda: self.update_chart('accel'))
+        self.gyro_button.clicked.connect(lambda: self.update_chart('gyro'))
+        self.temp_button.clicked.connect(lambda: self.update_chart('temp'))
+        self.resp_button.clicked.connect(lambda: self.update_chart('resp'))
+        
+        layout.addWidget(buttons_widget)
+        
+        # Create chart widget
+        self.chart_widget = pg.PlotWidget()
+        self.setup_chart(self.chart_widget, "Sensor Data")
+        layout.addWidget(self.chart_widget)
+        
+        self.home_page.setLayout(layout)
 
     def setup_chart(self, chart_widget, title):
         chart_widget.setBackground('white')
@@ -93,57 +131,33 @@ class AstronautMonitor(QMainWindow):
         chart_widget.getAxis('left').setPen(self.chart_style['axis_color'])
         return chart_widget
 
-    def init_home_page(self):    
-        layout = QVBoxLayout()
-        header_label = QLabel("Physiological Monitoring Dashboard")
-        header_label.setObjectName("pageHeader")
-        header_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(header_label)
+    def update_chart(self, sensor_type):
+        """Update the chart based on the selected sensor type"""
+        self.chart_widget.clear()
+        x_range = list(range(200))  # Create a fixed range for x-axis
         
-        # Create chart layout with 2x3 grid
-        charts_layout = QVBoxLayout()
-        charts_layout.setSpacing(20)
+        if sensor_type == 'accel':
+            self.chart_widget.setTitle("Accelerometer Data")
+            self.chart_widget.plot(x_range[:len(self.accel_x)], list(self.accel_x), pen='r', name='X')
+            self.chart_widget.plot(x_range[:len(self.accel_y)], list(self.accel_y), pen='g', name='Y')
+            self.chart_widget.plot(x_range[:len(self.accel_z)], list(self.accel_z), pen='b', name='Z')
         
-        self.chart_widget1 = self.setup_chart(pg.PlotWidget(), "Accelerometer (g)")
-        self.chart_widget2 = self.setup_chart(pg.PlotWidget(), "Gyroscope (°/s)")
-        self.chart_widget3 = self.setup_chart(pg.PlotWidget(), "Temperature (°C)")
-        self.chart_widget4 = self.setup_chart(pg.PlotWidget(), "Pressure (hPa)")
-        self.chart_widget5 = self.setup_chart(pg.PlotWidget(), "Respiratory Rate (mV)")
-
-        charts_layout.addWidget(self.chart_widget1)
-        charts_layout.addWidget(self.chart_widget2)
-        charts_layout.addWidget(self.chart_widget3)
-        charts_layout.addWidget(self.chart_widget4)
-        charts_layout.addWidget(self.chart_widget5)
-
-        layout.addLayout(charts_layout)
-        self.home_page.setLayout(layout)
-
-    def init_ml_page(self):
-        layout = QVBoxLayout()
+        elif sensor_type == 'gyro':
+            self.chart_widget.setTitle("Gyroscope Data")
+            self.chart_widget.plot(x_range[:len(self.gyro_x)], list(self.gyro_x), pen='r', name='X')
+            self.chart_widget.plot(x_range[:len(self.gyro_y)], list(self.gyro_y), pen='g', name='Y')
+            self.chart_widget.plot(x_range[:len(self.gyro_z)], list(self.gyro_z), pen='b', name='Z')
         
-        header_label = QLabel("Activity Recognition Dashboard")
-        header_label.setObjectName("pageHeader")
-        header_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(header_label)
+        elif sensor_type == 'temp':
+            self.chart_widget.setTitle("Temperature Data")
+            self.chart_widget.plot(x_range[:len(self.obj_temp)], list(self.obj_temp), pen='r', name='Object')
+            self.chart_widget.plot(x_range[:len(self.amb_temp)], list(self.amb_temp), pen='g', name='Ambient')
+        
+        elif sensor_type == 'resp':
+            self.chart_widget.setTitle("Respiratory Rate")
+            self.chart_widget.plot(x_range[:len(self.resp)], list(self.resp), pen='r', name='Respiratory Rate')
 
-        # Activity selection
-        activity_layout = QHBoxLayout()
-        activity_label = QLabel("Select Activity:")
-        activity_label.setObjectName("subHeader")
-        activity_combobox = QComboBox()
-        activity_combobox.addItems(["Running", "Walking", "Cycling", "Jumping", "Lifting"])
-        activity_layout.addWidget(activity_label)
-        activity_layout.addWidget(activity_combobox)
-        activity_layout.addStretch()
-        layout.addLayout(activity_layout)
-
-        # ML visualization chart
-        ml_chart = self.setup_chart(pg.PlotWidget(), "Activity Recognition")
-        layout.addWidget(ml_chart)
-
-        self.ml_page.setLayout(layout)
-
+    # [Rest of the class implementation remains the same...]
     def init_about_page(self):
         layout = QVBoxLayout()
         
@@ -179,13 +193,8 @@ class AstronautMonitor(QMainWindow):
         home_button.setObjectName("navButton")
         home_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.home_page))
         left_layout.addWidget(home_button)
-        ml_button = QPushButton("ML")
-        ml_button.setObjectName("navButton")
-        ml_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.ml_page))
-        left_layout.addWidget(ml_button)
         navbar_layout.addWidget(left_buttons)
 
-        # Add flexible space before logo
         navbar_layout.addStretch()
 
         # Centered logo
@@ -196,7 +205,6 @@ class AstronautMonitor(QMainWindow):
         self.logo_label.setAlignment(Qt.AlignCenter)
         navbar_layout.addWidget(self.logo_label)
 
-        # Add flexible space after logo
         navbar_layout.addStretch()
 
         right_buttons = QWidget()
@@ -211,10 +219,9 @@ class AstronautMonitor(QMainWindow):
         navbar.setMovable(False)
         navbar.addWidget(navbar_widget)
         self.addToolBar(navbar)
-        
+
     def load_data(self):
         try:
-            # Query to fetch data newer than the last timestamp
             query = {}
             if self.last_timestamp:
                 query = {"timestamp": {"$gt": self.last_timestamp}}
@@ -224,19 +231,17 @@ class AstronautMonitor(QMainWindow):
             new_data = list(cursor)
 
             if new_data:
-                # Group the data into cycles of 4 entries
-                for i in range(0, len(new_data), 4):
-                    if i + 4 <= len(new_data):
-                        cycle = new_data[i:i+4]
+                for i in range(0, len(new_data), 3):
+                    if i + 3 <= len(new_data):
+                        cycle = new_data[i:i+3]
                         
                         # Update the last timestamp to the latest in the cycle
                         self.last_timestamp = cycle[-1]["timestamp"]
 
                         # Extract data for each sensor in the cycle
-                        accel_entry = cycle[0]
-                        temp_entry = cycle[1]
-                        pressure_entry = cycle[2]
-                        resp_entry = cycle[3]
+                        temp_entry = cycle[0]
+                        resp_entry = cycle[1]
+                        accel_entry = cycle[2]
 
                         # Accelerometer data (entry 1)
                         accel_data = accel_entry.get('Accelerometer', {})
@@ -250,54 +255,15 @@ class AstronautMonitor(QMainWindow):
                         self.gyro_y.append(gyro_data.get('Y_deg_per_s', 0))
                         self.gyro_z.append(gyro_data.get('Z_deg_per_s', 0))
 
-                        # Object and Ambient Temperature data (entry 2)
+                        # Temperature data (entry 2)
                         self.obj_temp.append(temp_entry.get('ObjectTemperature', {}).get('Celsius', 0))
                         self.amb_temp.append(temp_entry.get('AmbientTemperature', {}).get('Celsius', 0))
 
-                        # Pressure data (entry 3)
-                        self.pressure.append(pressure_entry.get('Pressure', {}).get('hPa', 0))
-
-                        # Respiratory Rate data (entry 4)
+                        # Respiratory Rate data (entry 3)
                         self.resp.append(resp_entry.get('RespiratoryRate', {}).get('Value_mV', 0))
-
-
-                # Update the charts with the new data
-                self.update_charts()
-
 
         except Exception as e:
             print(f"Error loading data: {e}")
-
-
-    def update_charts(self):
-        """Update all charts with the current data"""
-        # Get the full range of points
-        x_range = list(range(max(0, len(self.accel_x)-200), len(self.accel_x)))
-        
-        # Update accelerometer chart
-        self.chart_widget1.clear()
-        self.chart_widget1.plot(x_range, list(self.accel_x), pen='r', name='X')
-        self.chart_widget1.plot(x_range, list(self.accel_y), pen='g', name='Y')
-        self.chart_widget1.plot(x_range, list(self.accel_z), pen='b', name='Z')
-
-        # Update gyroscope chart
-        self.chart_widget2.clear()
-        self.chart_widget2.plot(x_range, list(self.gyro_x), pen='r', name='X')
-        self.chart_widget2.plot(x_range, list(self.gyro_y), pen='g', name='Y')
-        self.chart_widget2.plot(x_range, list(self.gyro_z), pen='b', name='Z')
-
-        # Update temperature chart
-        self.chart_widget3.clear()
-        self.chart_widget3.plot(x_range, list(self.obj_temp), pen='r', name='Object')
-        self.chart_widget3.plot(x_range, list(self.amb_temp), pen='g', name='Ambient')
-
-        # Update pressure chart
-        self.chart_widget4.clear()
-        self.chart_widget4.plot(x_range, list(self.pressure), pen='r')
-
-        # Update respiratory rate chart
-        self.chart_widget5.clear()
-        self.chart_widget5.plot(x_range, list(self.resp), pen='r')
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
