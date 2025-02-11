@@ -72,6 +72,8 @@ class AstronautMonitor(QMainWindow):
         self.load_data()
 
     def init_data_buffers(self):
+        self.pulse = deque(maxlen=200)
+        self.resp = deque(maxlen=200)
         self.accel_x = deque(maxlen=200)
         self.accel_y = deque(maxlen=200)
         self.accel_z = deque(maxlen=200)
@@ -80,7 +82,6 @@ class AstronautMonitor(QMainWindow):
         self.gyro_z = deque(maxlen=200)
         self.obj_temp = deque(maxlen=200)
         self.amb_temp = deque(maxlen=200)
-        self.resp = deque(maxlen=200)
 
     def init_home_page(self):    
         layout = QVBoxLayout()
@@ -97,22 +98,25 @@ class AstronautMonitor(QMainWindow):
         buttons_widget.setLayout(buttons_layout)
         
         # Create buttons
+        self.pulse_button = QPushButton("Pulse")
+        self.resp_button = QPushButton("Respiratory")
         self.accel_button = QPushButton("Accelerometer")
         self.gyro_button = QPushButton("Gyroscope")
         self.temp_button = QPushButton("Temperature")
-        self.resp_button = QPushButton("Respiratory")
         
         # Add buttons to layout
+        buttons_layout.addWidget(self.pulse_button)
+        buttons_layout.addWidget(self.resp_button)
         buttons_layout.addWidget(self.accel_button)
         buttons_layout.addWidget(self.gyro_button)
         buttons_layout.addWidget(self.temp_button)
-        buttons_layout.addWidget(self.resp_button)
         
         # Connect button signals
+        self.pulse_button.clicked.connect(lambda: self.update_chart('pulse'))
+        self.resp_button.clicked.connect(lambda: self.update_chart('resp'))
         self.accel_button.clicked.connect(lambda: self.update_chart('accel'))
         self.gyro_button.clicked.connect(lambda: self.update_chart('gyro'))
         self.temp_button.clicked.connect(lambda: self.update_chart('temp'))
-        self.resp_button.clicked.connect(lambda: self.update_chart('resp'))
         
         layout.addWidget(buttons_widget)
         
@@ -136,7 +140,15 @@ class AstronautMonitor(QMainWindow):
         self.chart_widget.clear()
         x_range = list(range(200))  # Create a fixed range for x-axis
         
-        if sensor_type == 'accel':
+        if sensor_type == 'pulse':
+            self.chart_widget.setTitle("Pulse Rate")
+            self.chart_widget.plot(x_range[:len(self.pulse)], list(self.pulse), pen='r', name='Pulse Rate')
+            
+        elif sensor_type == 'resp':
+            self.chart_widget.setTitle("Respiratory Rate")
+            self.chart_widget.plot(x_range[:len(self.resp)], list(self.resp), pen='r', name='Respiratory Rate')
+        
+        elif sensor_type == 'accel':
             self.chart_widget.setTitle("Accelerometer Data")
             self.chart_widget.plot(x_range[:len(self.accel_x)], list(self.accel_x), pen='r', name='X')
             self.chart_widget.plot(x_range[:len(self.accel_y)], list(self.accel_y), pen='g', name='Y')
@@ -152,12 +164,7 @@ class AstronautMonitor(QMainWindow):
             self.chart_widget.setTitle("Temperature Data")
             self.chart_widget.plot(x_range[:len(self.obj_temp)], list(self.obj_temp), pen='r', name='Object')
             self.chart_widget.plot(x_range[:len(self.amb_temp)], list(self.amb_temp), pen='g', name='Ambient')
-        
-        elif sensor_type == 'resp':
-            self.chart_widget.setTitle("Respiratory Rate")
-            self.chart_widget.plot(x_range[:len(self.resp)], list(self.resp), pen='r', name='Respiratory Rate')
 
-    # [Rest of the class implementation remains the same...]
     def init_about_page(self):
         layout = QVBoxLayout()
         
@@ -226,44 +233,36 @@ class AstronautMonitor(QMainWindow):
             if self.last_timestamp:
                 query = {"timestamp": {"$gt": self.last_timestamp}}
 
-            # Fetch new data sorted by timestamp
             cursor = self.collection.find(query).sort("timestamp", 1)
             new_data = list(cursor)
 
             if new_data:
-                for i in range(0, len(new_data), 3):
-                    if i + 3 <= len(new_data):
-                        cycle = new_data[i:i+3]
-                        
-                        # Update the last timestamp to the latest in the cycle
-                        self.last_timestamp = cycle[-1]["timestamp"]
+                for entry in new_data:
+                    self.last_timestamp = entry["timestamp"]  # Update timestamp for each entry
 
-                        # Extract data for each sensor in the cycle
-                        temp_entry = cycle[0]
-                        resp_entry = cycle[1]
-                        accel_entry = cycle[2]
-
-                        # Accelerometer data (entry 1)
-                        accel_data = accel_entry.get('Accelerometer', {})
-                        self.accel_x.append(accel_data.get('X_g', 0))
-                        self.accel_y.append(accel_data.get('Y_g', 0))
-                        self.accel_z.append(accel_data.get('Z_g', 0))
-
-                        # Gyroscope data (entry 1)
-                        gyro_data = accel_entry.get('Gyroscope', {})
-                        self.gyro_x.append(gyro_data.get('X_deg_per_s', 0))
-                        self.gyro_y.append(gyro_data.get('Y_deg_per_s', 0))
-                        self.gyro_z.append(gyro_data.get('Z_deg_per_s', 0))
-
-                        # Temperature data (entry 2)
-                        self.obj_temp.append(temp_entry.get('ObjectTemperature', {}).get('Celsius', 0))
-                        self.amb_temp.append(temp_entry.get('AmbientTemperature', {}).get('Celsius', 0))
-
-                        # Respiratory Rate data (entry 3)
-                        self.resp.append(resp_entry.get('RespiratoryRate', {}).get('Value_mV', 0))
+                    # Flexible data extraction
+                    self.extract_and_append(entry, "PulseSensor", ["Value_mV"], [self.pulse])
+                    self.extract_and_append(entry, "RespiratoryRate", ["avg_mV"], [self.resp])
+                    self.extract_and_append(entry, "MPU_Accelerometer", ["X_g", "Y_g", "Z_g"], 
+                                             [self.accel_x, self.accel_y, self.accel_z])
+                    self.extract_and_append(entry, "MPU_Gyroscope", ["X_deg_per_s", "Y_deg_per_s", "Z_deg_per_s"],
+                                             [self.gyro_x, self.gyro_y, self.gyro_z])
+                    self.extract_and_append(entry, "MLX_ObjectTemperature", ["Celsius"], [self.obj_temp])
+                    self.extract_and_append(entry, "MLX_AmbientTemperature", ["Celsius"], [self.amb_temp])
+                    
+                    
 
         except Exception as e:
             print(f"Error loading data: {e}")
+
+    def extract_and_append(self, entry, sensor_name, data_fields, data_queues):
+        """Extracts specified data fields from a sensor entry and appends to respective queues."""
+        sensor_data = entry.get(sensor_name, {})
+        if sensor_data:
+            for i, field in enumerate(data_fields):
+                value = sensor_data.get(field, 0)  # Default to 0 if field is missing
+                if i < len(data_queues): # Check for correct number of queues
+                    data_queues[i].append(value)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
