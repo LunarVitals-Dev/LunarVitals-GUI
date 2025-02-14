@@ -54,7 +54,7 @@ class NordicBLEWorker(QThread):
                 await client.start_notify(self.rx_uuid, callback)
 
                 while self.running:
-                    await asyncio.sleep(0.1)  # Back to 0.1 for data page responsiveness
+                    await asyncio.sleep(0.1) # Sleep to prevent blocking the event loop
                     if self._stop_event.is_set():
                         break
 
@@ -158,7 +158,6 @@ class AstronautMonitor(QMainWindow):
         try:
             self.send_to_mongo(data)
 
-            # Store latest data for data page  <-  CRITICAL FIX
             self.latest_data = data
 
             for sensor_name, sensor_data in data.items():
@@ -191,13 +190,13 @@ class AstronautMonitor(QMainWindow):
         self.setCentralWidget(self.central_stack)
         self.home_page = QWidget()
         self.about_page = QWidget()
-        self.data_page = QWidget()  # Create the data page
+        self.data_page = QWidget()  
         self.init_home_page()
         self.init_about_page()
-        self.init_data_page()   # Initialize the data page
+        self.init_data_page()   
         self.central_stack.addWidget(self.home_page)
         self.central_stack.addWidget(self.about_page)
-        self.central_stack.addWidget(self.data_page)  # Add data page to the stack
+        self.central_stack.addWidget(self.data_page)  
         self.create_navbar()
 
 
