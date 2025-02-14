@@ -2,7 +2,7 @@
 * {
     font-family: 'Segoe UI', sans-serif;
     font-size: 16px;
-    color: white;
+    color: #062a61; /* Default text color to dark blue, consistent with other elements */
 }
 
 /* Main Window */
@@ -72,7 +72,7 @@ QComboBox::drop-down {
 }
 
 QComboBox::down-arrow {
-    image: url(down_arrow.png);
+    image: url(down_arrow.png); /* You'll need a down_arrow.png image */
     width: 12px;
     height: 12px;
 }
@@ -84,23 +84,6 @@ QComboBox QAbstractItemView {
     selection-color: black;
 }
 
-/* Table Widget Styling */
-QTableWidget {
-    background-color: white;
-    color: #062a61;
-    font-size: 16px;
-}
-
-QHeaderView::section {
-    background-color: white;
-    color: #062a61;
-    padding: 4px;
-    border: none;
-}
-
-QTableWidget::item {
-    padding: 10px;
-}
 
 /* Button Styling */
 QPushButton {
@@ -115,14 +98,41 @@ QPushButton:hover {
     background-color: #D94E2F;
 }
 
-/* Chart Widget */
-pg\.PlotWidget {
+/* Chart Widget (using the correct selector) */
+/* Note:  'pg.PlotWidget' is NOT a valid CSS selector. */
+/*        We need to use a class or ID selector. */
+/*        The best way is to add a class to the PlotWidget. */
+/* In your Python code:  self.chart_widget.setObjectName("chartWidget") */
+
+#chartWidget { /* or .plot-widget if you want to style *all* PlotWidgets */
     background-color: white;
 }
 
-/* Custom Legend for Chart */
+/* Custom Legend for Chart (if you are using a custom legend) */
+/* This is VERY specific to how PyQtGraph creates legends.  It's brittle. */
 .pg-legend {
-    background-color: #062a61;
+   background-color: #062a61; /*  This will only affect the background */
     border: 1px solid #ccc;
     font-size: 16px;
+}
+/* To change legend text color, it's more reliable to do it in Python */
+/*  legend.label.setPen(pg.mkPen('white')) */
+
+/* --- New Styles for Data Page --- */
+/* Style for the QLabels on the data page */
+
+QLabel {
+  color: #062a61; /* Consistent with the rest of your design */
+  background-color: transparent; /*  Usually best to let the page background show */
+  /* Add padding if you want spacing around the text */
+  padding: 2px;
+}
+
+/* If you want to specifically style the labels *inside* the data_page, you */
+/* can use a more specific selector.  Best practice is to add a class. */
+/* In your Python, when creating the data_page:  self.data_page.setObjectName("dataPage") */
+
+#dataPage QLabel {
+    font-size: 18px; /*  Slightly larger for data display */
+     /* Add any other specific styling for data page labels here */
 }

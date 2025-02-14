@@ -1,5 +1,4 @@
-PyQt5
-PyQt5-sip
+PySide6
 PyOpenGL
 PyWavefront
 numpy
@@ -8,3 +7,4 @@ dnspython
 pyassimp
 pyqtgraph
 python-dotenv
+bleak
