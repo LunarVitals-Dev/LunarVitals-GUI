@@ -136,3 +136,21 @@ QLabel {
     font-size: 18px; /*  Slightly larger for data display */
      /* Add any other specific styling for data page labels here */
 }
+
+.sensor-box {
+    background-color: white;
+    padding: 20px;
+    margin: 10px;
+}
+
+/* Center Image */
+#centerImage {
+    padding: 10px;
+    background-color: white;
+    margin: 20px;
+}
+
+/* Grid Layout */
+QGridLayout {
+    spacing: 20px;
+}

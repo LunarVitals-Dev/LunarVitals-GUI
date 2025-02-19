@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QToolBar,
-    QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout
+    QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame
 )
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QPixmap
@@ -15,7 +15,11 @@ import json
 import sys
 import os
 import numpy as np
+import logging #Import logging
+import re       #Import regex
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class NordicBLEWorker(QThread):
     data_received = Signal(dict)
@@ -33,23 +37,16 @@ class NordicBLEWorker(QThread):
         try:
             async with BleakClient(self.mac_address) as client:
                 self._client = client
-                print(f"Connected to Nordic BLE Device: {self.mac_address}")
+                logging.info(f"Connected to Nordic BLE Device: {self.mac_address}")
 
                 def callback(sender, data):
                     try:
                         message = data.decode('utf-8')
                         self.received_data += message
-
-                        json_start = self.received_data.find('[')
-                        json_end = self.received_data.find(']', json_start)
-
-                        if json_start != -1 and json_end != -1:
-                            json_data = self.received_data[json_start + 1:json_end]
-                            self.received_data = self.received_data[json_end + 1:]
-                            self.data_received.emit(json.loads(json_data))
+                        self.process_received_data()
 
                     except Exception as e:
-                        print(f"Error processing data: {e}")
+                        logging.error(f"Error in BLE callback: {e}")
 
                 await client.start_notify(self.rx_uuid, callback)
 
@@ -60,9 +57,27 @@ class NordicBLEWorker(QThread):
 
                 await client.stop_notify(self.rx_uuid)
         except Exception as e:
-            print(f"BLE connection error: {e}")
+            logging.error(f"BLE connection error: {e}")
         finally:
             self._client = None
+
+    def process_received_data(self):
+        #Use regex to split by complete JSON arrays
+        json_pattern = r'\[.*?\]'
+        json_objects = re.findall(json_pattern, self.received_data)
+
+        #Clear processed data
+        self.received_data = self.received_data[len("".join(json_objects)):]
+
+        for json_str in json_objects:
+            try:
+                #Load JSON string to object, stripping square brackets
+                data = json.loads(json_str[1:-1])
+                self.data_received.emit(data)
+            except json.JSONDecodeError as e:
+                logging.error(f"JSON Decode Error: {e}.  Problematic JSON String: {json_str}")
+            except Exception as e:
+                logging.error(f"Error processing JSON: {e}")
 
     def run(self):
         asyncio.run(self.connect_and_listen())
@@ -90,7 +105,7 @@ class AstronautMonitor(QMainWindow):
             self.db = self.client["LunarVitalsDB"]
             self.collection = self.db["sensor_data"]
         except Exception as e:
-            print(f"Error connecting to MongoDB: {e}")
+            logging.error(f"Error connecting to MongoDB: {e}")
             sys.exit(1)
 
         self.chart_style = {
@@ -99,7 +114,7 @@ class AstronautMonitor(QMainWindow):
             'title_size': '20pt',
             'title_color': '#062a61',
             'axis_color': '#062a61',
-            'grid_color': '#e0e0e0'
+            'grid_color': 'e0e0e0'
         }
 
         self.init_data_buffers()
@@ -121,7 +136,7 @@ class AstronautMonitor(QMainWindow):
 
         self.current_chart_type = None
         self.data_counter = 0
-        self.downsample_rate = 2
+        self.downsample_rate = 1
 
     def init_data_buffers(self):
         self.maxlen = 100
@@ -136,6 +151,7 @@ class AstronautMonitor(QMainWindow):
         self.obj_temp = deque(maxlen=self.maxlen)
         self.amb_temp = deque(maxlen=self.maxlen)
         self.pressure = deque(maxlen=self.maxlen)
+        self.SPO2 = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
 
     def send_to_mongo(self, sensor_data):
@@ -149,7 +165,7 @@ class AstronautMonitor(QMainWindow):
                 self.collection.insert_many(self.mongo_buffer)
                 self.mongo_buffer = []
             except Exception as e:
-                print(f"Error inserting into MongoDB: {e}")
+                logging.error(f"Error inserting into MongoDB: {e}")
 
     def handle_ble_data(self, data):
         self.data_counter += 1
@@ -181,9 +197,11 @@ class AstronautMonitor(QMainWindow):
                         self.amb_temp.append(sensor_data["Celsius"])
                     elif sensor_name == "BMP_Pressure" and "hPa" in sensor_data:
                         self.pressure.append(sensor_data["hPa"])
+                    elif sensor_name == "MAX_SP02 Sensor" and "SPO2" in sensor_data:
+                        self.pressure.append(sensor_data["SPO2"])
 
         except Exception as e:
-            print(f"Error processing BLE data: {e}")
+            logging.error(f"Error processing BLE data: {e}")
 
     def initUI(self):
         self.central_stack = QStackedWidget()
@@ -226,20 +244,17 @@ class AstronautMonitor(QMainWindow):
         self.accel_button = QPushButton("Accelerometer")
         self.gyro_button = QPushButton("Gyroscope")
         self.temp_button = QPushButton("Temperature")
-        self.pressure_button = QPushButton("Pressure")
         buttons_layout.addWidget(self.pulse_button)
         buttons_layout.addWidget(self.resp_button)
         buttons_layout.addWidget(self.accel_button)
         buttons_layout.addWidget(self.gyro_button)
         buttons_layout.addWidget(self.temp_button)
-        buttons_layout.addWidget(self.pressure_button)
 
         self.pulse_button.clicked.connect(lambda: self.update_chart('pulse'))
         self.resp_button.clicked.connect(lambda: self.update_chart('resp'))
         self.accel_button.clicked.connect(lambda: self.update_chart('accel'))
         self.gyro_button.clicked.connect(lambda: self.update_chart('gyro'))
         self.temp_button.clicked.connect(lambda: self.update_chart('temp'))
-        self.pressure_button.clicked.connect(lambda: self.update_chart('pressure'))
         layout.addWidget(buttons_widget)
 
         self.chart_widget = pg.PlotWidget()
@@ -299,13 +314,6 @@ class AstronautMonitor(QMainWindow):
             self.amb_temp_plot = self.chart_widget.plot(pen='g')
             self.update_current_chart()
 
-        elif sensor_type == 'pressure':
-            self.chart_widget.setTitle("Pressure Data")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Pressure", units='hPa')
-            self.pressure_plot = self.chart_widget.plot(pen='r')
-            self.update_current_chart()
-
     def update_current_chart(self):
         if not self.current_chart_type:
             return
@@ -362,12 +370,6 @@ class AstronautMonitor(QMainWindow):
                 self.obj_temp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
                 self.amb_temp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
-        elif self.current_chart_type == 'pressure':
-            if self.pressure and self.timestamps:
-                pressure_np = np.array(self.pressure)
-                self.pressure_plot.setData(relative_timestamps[:len(pressure_np)], pressure_np)
-                self.pressure_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
-
     def init_about_page(self):
         layout = QVBoxLayout()
         header_label = QLabel("About The Project")
@@ -387,44 +389,86 @@ class AstronautMonitor(QMainWindow):
         layout = QGridLayout()
         self.data_labels = {}
 
-        row = 0
-        for sensor_name in ["PulseSensor", "RespiratoryRate", "MPU_Accelerometer",
-                            "MPU_Gyroscope", "MLX_ObjectTemperature",
-                            "MLX_AmbientTemperature", "BMP_Pressure"]:
+        # Define sensor display names and their measurements
+        self.sensor_config = {
+            "PulseSensor": {
+                "display_name": "Heart Rate Monitor",
+                "measurements": {"pulse_BPM": "Heart Rate (BPM)"},
+                "grid_position": (0, 0)  # (row, column)
+            },
+            "RespiratoryRate": {
+                "display_name": "Breathing Rate Monitor",
+                "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
+                "grid_position": (2, 0)
+            },
+            "MPU_Gyroscope": {
+                "display_name": "Step Counter",
+                "measurements": {"steps": "Total Steps"},
+                "grid_position": (4, 0)
+            },
+            "MLX_ObjectTemperature": {
+                "display_name": "Temperature Sensor",
+                "measurements": {"Celsius": "Temperature (°C)"},
+                "grid_position": (0, 2)
+            },
+            "BMP_Pressure": {
+                "display_name": "Atmospheric Pressure",
+                "measurements": {"hPa": "Pressure (hPa)"},
+                "grid_position": (2, 2)
+            },
+            "MAX_SPO2 Sensor": {
+                "display_name": "Blood Oxygen Monitor",
+                "measurements": {"SPO2": "Blood Oxygen (%)"},
+                "grid_position": (4, 2)
+            }
+        }
+
+        # Create sensor boxes
+        for sensor_name, config in self.sensor_config.items():
+            # Create box for each sensor
+            sensor_box = QFrame()
+            sensor_box.setObjectName("sensorBox")
+            sensor_box.setProperty("class", "sensor-box")
+            
+            box_layout = QVBoxLayout()
+            
+            # Add title
+            title = QLabel(f"<b>{config['display_name']}</b>")
+            title.setProperty("class", "sensor-title")
+            box_layout.addWidget(title)
+
+            # Add measurements
             self.data_labels[sensor_name] = {}
-            layout.addWidget(QLabel(f"<b>{sensor_name}:</b>"), row, 0, alignment=Qt.AlignLeft)
-            row += 1
+            for key, display_name in config['measurements'].items():
+                value_label = QLabel(f"{display_name}: N/A")
+                value_label.setProperty("class", "sensor-value")
+                self.data_labels[sensor_name][key] = value_label
+                box_layout.addWidget(value_label)
 
-            if sensor_name == "PulseSensor":
-                self.data_labels[sensor_name]["Value_mV"] = QLabel("Value_mV: N/A")
-                layout.addWidget(self.data_labels[sensor_name]["Value_mV"], row, 0, alignment=Qt.AlignLeft)
-                row += 1
-            elif sensor_name == "RespiratoryRate":
-                self.data_labels[sensor_name]["avg_mV"] = QLabel("avg_mV: N/A")
-                layout.addWidget(self.data_labels[sensor_name]["avg_mV"], row, 0, alignment=Qt.AlignLeft)
-                row += 1
-            elif sensor_name == "MPU_Accelerometer":
-                for axis in ["X_g", "Y_g", "Z_g"]:
-                    self.data_labels[sensor_name][axis] = QLabel(f"{axis}: N/A")
-                    layout.addWidget(self.data_labels[sensor_name][axis], row, 0, alignment=Qt.AlignLeft)
-                    row += 1
-            elif sensor_name == "MPU_Gyroscope":
-                for axis in ["X_deg_per_s", "Y_deg_per_s", "Z_deg_per_s"]:
-                    self.data_labels[sensor_name][axis] = QLabel(f"{axis}: N/A")
-                    layout.addWidget(self.data_labels[sensor_name][axis], row, 0, alignment=Qt.AlignLeft)
-                    row += 1
-            elif sensor_name in ["MLX_ObjectTemperature", "MLX_AmbientTemperature"]:
-                self.data_labels[sensor_name]["Celsius"] = QLabel("Celsius: N/A")
-                layout.addWidget(self.data_labels[sensor_name]["Celsius"], row, 0, alignment=Qt.AlignLeft)
-                row += 1
-            elif sensor_name == "BMP_Pressure":
-                self.data_labels[sensor_name]["hPa"] = QLabel("hPa: N/A")
-                layout.addWidget(self.data_labels[sensor_name]["hPa"], row, 0, alignment=Qt.AlignLeft)
-                row += 1
+            sensor_box.setLayout(box_layout)
+            row, col = config['grid_position']
+            layout.addWidget(sensor_box, row, col)
 
-        layout.setRowStretch(row, 1)
+        # Add center image
+        center_image = QLabel()
+        center_image.setObjectName("centerImage")
+        # Set a fixed size for the image container
+        center_image.setFixedSize(300, 300)  # Adjust size as needed
+        center_image.setScaledContents(True)
+        
+        # Load and set the image
+        pixmap = QPixmap('assets/Astronaut.png')
+        center_image.setPixmap(pixmap)
+        
+        # Add image to center of grid
+        layout.addWidget(center_image, 0, 1, 5, 1, Qt.AlignCenter)  # spans 5 rows in center column
+
+        # Set stretch factors
+        layout.setColumnStretch(0, 1)  # left column
+        layout.setColumnStretch(1, 1)  # center column
+        layout.setColumnStretch(2, 1)  # right column
+
         self.data_page.setLayout(layout)
-
 
     def update_data_page(self):
         if hasattr(self, 'latest_data'):
@@ -432,7 +476,15 @@ class AstronautMonitor(QMainWindow):
                 if isinstance(sensor_data, dict) and sensor_name in self.data_labels:
                     for key, value in sensor_data.items():
                         if key in self.data_labels[sensor_name]:
-                            self.data_labels[sensor_name][key].setText(f"{key}: {value:.2f}")
+                            display_name = next(
+                                (config['measurements'][key] 
+                                for config in self.sensor_config.values() 
+                                if key in config['measurements']),
+                                key
+                            )
+                            self.data_labels[sensor_name][key].setText(
+                                f"{display_name}: {value:.2f}"
+                            )
 
     def create_navbar(self):
         navbar_widget = QWidget()
@@ -457,7 +509,7 @@ class AstronautMonitor(QMainWindow):
 
 
         self.logo_label = QLabel()
-        pixmap = QPixmap("lunarlogo.png")
+        pixmap = QPixmap("assets/lunarlogo.png")
         pixmap = pixmap.scaled(250, 80, Qt.KeepAspectRatio)
         self.logo_label.setPixmap(pixmap)
         self.logo_label.setAlignment(Qt.AlignCenter)
