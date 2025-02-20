@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame
 )
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QPixmap
+from PySide6.QtGui import QPixmap, QFontDatabase, QFont
 from bleak import BleakClient
 from pymongo import MongoClient
 import time
@@ -92,12 +92,15 @@ class NordicBLEWorker(QThread):
 class AstronautMonitor(QMainWindow):
     ACTIVITIES = ["Running", "Walking", "Hiking", "Jumping", "Lifting"]
     NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
+    # DONGLE_DEVICE_MAC = "CF:8C:8F:A7:C4:A4"
     UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Physiological Monitoring System")
         self.resize(1024, 768)
+        
+        self.load_custom_font()
 
         # MongoDB setup
         try:
@@ -120,6 +123,7 @@ class AstronautMonitor(QMainWindow):
         self.init_data_buffers()
 
         self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
+        # self.worker = NordicBLEWorker(self.DONGLE_DEVICE_MAC, self.UART_RX_UUID)
         self.worker.data_received.connect(self.handle_ble_data)
         self.worker.start()
 
@@ -130,13 +134,22 @@ class AstronautMonitor(QMainWindow):
         # Timer for updating charts
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.flush_mongo_buffer)
+        self.update_timer.timeout.connect(self.update_home_page)
         self.update_timer.timeout.connect(self.update_current_chart)
-        self.update_timer.timeout.connect(self.update_data_page)
         self.update_timer.start(100)
 
         self.current_chart_type = None
         self.data_counter = 0
         self.downsample_rate = 1
+        
+    def load_custom_font(self):
+        self.custom_font_id = QFontDatabase.addApplicationFont("assets/MegatransdemoRegular-8M9B0.otf")
+        if self.custom_font_id != -1:
+            self.custom_font_family = QFontDatabase.applicationFontFamilies(self.custom_font_id)[0]
+            self.custom_font = QFont(self.custom_font_family)
+        else:
+            logging.error("Failed to load custom font")
+            self.custom_font = None
 
     def init_data_buffers(self):
         self.maxlen = 100
@@ -207,23 +220,125 @@ class AstronautMonitor(QMainWindow):
         self.central_stack = QStackedWidget()
         self.setCentralWidget(self.central_stack)
         self.home_page = QWidget()
-        self.about_page = QWidget()
         self.data_page = QWidget()  
         self.init_home_page()
-        self.init_about_page()
-        self.init_data_page()   
+        self.init_data_page() 
         self.central_stack.addWidget(self.home_page)
-        self.central_stack.addWidget(self.about_page)
         self.central_stack.addWidget(self.data_page)  
         self.create_navbar()
-
-
+        
     def init_home_page(self):
-        layout = QVBoxLayout()
+        layout = QGridLayout()
+        
+        # Header title
         header_label = QLabel("Physiological Monitoring Dashboard")
         header_label.setObjectName("pageHeader")
         header_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(header_label)
+        layout.addWidget(header_label, 0, 0, 1, 3)  # Title spans 3 columns at the top
+
+        self.data_labels = {}
+
+        # Sensor display configuration
+        self.sensor_config = {
+            "PulseSensor": {
+                "display_name": "Heart Rate Monitor",
+                "measurements": {"pulse_BPM": "Heart Rate (BPM)"},
+                "grid_position": (1, 0)  # Left column
+            },
+            "RespiratoryRate": {
+                "display_name": "Breathing Rate Monitor",
+                "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
+                "grid_position": (2, 0)
+            },
+            "MPU_Gyroscope": {
+                "display_name": "Step Counter",
+                "measurements": {"steps": "Total Steps"},
+                "grid_position": (3, 0)
+            },
+            "MLX_ObjectTemperature": {
+                "display_name": "Body Temperature",
+                "measurements": {"Celsius": "Temperature (°C)"},
+                "grid_position": (1, 2)  # Right column
+            },
+            "BMP_Pressure": {
+                "display_name": "Atmospheric Pressure",
+                "measurements": {"hPa": "Pressure (hPa)"},
+                "grid_position": (2, 2)
+            },
+            "MAX_SPO2 Sensor": {
+                "display_name": "Blood Oxygen Monitor",
+                "measurements": {"SPO2": "Blood Oxygen (%)"},
+                "grid_position": (3, 2)
+            }
+        }
+
+        # Create sensor boxes
+        for sensor_name, config in self.sensor_config.items():
+            sensor_box = QFrame()
+            sensor_box.setObjectName("sensorBox")
+            sensor_box.setProperty("class", "sensor-box")
+
+            box_layout = QVBoxLayout()
+            title = QLabel(f"<b>{config['display_name']}</b>")
+            if self.custom_font:
+                title.setFont(self.custom_font)
+            title.setProperty("class", "sensor-title")
+            box_layout.addWidget(title)
+
+            self.data_labels[sensor_name] = {}
+            for key, display_name in config['measurements'].items():
+                value_label = QLabel(f"{display_name}: N/A")
+                if self.custom_font:
+                    value_label.setFont(self.custom_font)
+                value_label.setProperty("class", "sensor-value")
+                self.data_labels[sensor_name][key] = value_label
+                box_layout.addWidget(value_label)
+
+            sensor_box.setLayout(box_layout)
+            row, col = config['grid_position']
+            layout.addWidget(sensor_box, row, col)
+
+        # Add astronaut image
+        center_image = QLabel()
+        center_image.setObjectName("centerImage")
+        center_image.setFixedSize(300, 500)  
+        center_image.setScaledContents(True)
+        pixmap = QPixmap('assets/spaceman.png')
+        center_image.setPixmap(pixmap)
+
+        # Place image in center column spanning rows 1 to 3
+        layout.addWidget(center_image, 1, 1, 3, 1, Qt.AlignCenter)
+
+        # Set column and row stretch for even spacing
+        layout.setColumnStretch(0, 1)  # Left
+        layout.setColumnStretch(1, 1)  # Center
+        layout.setColumnStretch(2, 1)  # Right
+        layout.setRowStretch(1, 1)
+        layout.setRowStretch(2, 1)
+        layout.setRowStretch(3, 1)
+
+        self.home_page.setLayout(layout)
+
+
+    def update_home_page(self):
+        if hasattr(self, 'latest_data'):
+            for sensor_name, sensor_data in self.latest_data.items():
+                if isinstance(sensor_data, dict) and sensor_name in self.data_labels:
+                    for key, value in sensor_data.items():
+                        if key in self.data_labels[sensor_name]:
+                            display_name = next(
+                                (config['measurements'][key] 
+                                for config in self.sensor_config.values() 
+                                if key in config['measurements']),
+                                key
+                            )
+                            self.data_labels[sensor_name][key].setText(
+                                f"{display_name}: {value:.2f}"
+                            )
+
+
+    def init_data_page(self):
+        layout = QVBoxLayout()
 
         activity_layout = QHBoxLayout()
         activity_label = QLabel("Current Activity:")
@@ -231,10 +346,18 @@ class AstronautMonitor(QMainWindow):
         self.activity_combo.addItems(self.ACTIVITIES)
         activity_layout.addWidget(activity_label)
         activity_layout.addWidget(self.activity_combo)
-        activity_layout.addStretch()
+
+        # Create a widget to hold the activity layout
         activity_widget = QWidget()
         activity_widget.setLayout(activity_layout)
-        layout.addWidget(activity_widget)
+
+        # Create a horizontal layout to center the activity widget
+        centered_layout = QHBoxLayout()
+        centered_layout.addStretch()
+        centered_layout.addWidget(activity_widget)
+        centered_layout.addStretch()
+
+        layout.addLayout(centered_layout)
 
         buttons_widget = QWidget()
         buttons_layout = QHBoxLayout()
@@ -260,7 +383,7 @@ class AstronautMonitor(QMainWindow):
         self.chart_widget = pg.PlotWidget()
         self.setup_chart(self.chart_widget, "Sensor Data")
         layout.addWidget(self.chart_widget)
-        self.home_page.setLayout(layout)
+        self.data_page.setLayout(layout)
 
     def setup_chart(self, chart_widget, title):
         chart_widget.setBackground('white')
@@ -370,159 +493,43 @@ class AstronautMonitor(QMainWindow):
                 self.obj_temp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
                 self.amb_temp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
-    def init_about_page(self):
-        layout = QVBoxLayout()
-        header_label = QLabel("About The Project")
-        header_label.setObjectName("pageHeader")
-        header_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(header_label)
-        about_text = QLabel(
-            "Lunar Vitals Monitoring System\n"
-            "This application provides real-time monitoring of astronaut physiological data during lunar missions."
-        )
-        about_text.setAlignment(Qt.AlignCenter)
-        about_text.setWordWrap(True)
-        layout.addWidget(about_text)
-        self.about_page.setLayout(layout)
-
-    def init_data_page(self):
-        layout = QGridLayout()
-        self.data_labels = {}
-
-        # Define sensor display names and their measurements
-        self.sensor_config = {
-            "PulseSensor": {
-                "display_name": "Heart Rate Monitor",
-                "measurements": {"pulse_BPM": "Heart Rate (BPM)"},
-                "grid_position": (0, 0)  # (row, column)
-            },
-            "RespiratoryRate": {
-                "display_name": "Breathing Rate Monitor",
-                "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
-                "grid_position": (2, 0)
-            },
-            "MPU_Gyroscope": {
-                "display_name": "Step Counter",
-                "measurements": {"steps": "Total Steps"},
-                "grid_position": (4, 0)
-            },
-            "MLX_ObjectTemperature": {
-                "display_name": "Temperature Sensor",
-                "measurements": {"Celsius": "Temperature (°C)"},
-                "grid_position": (0, 2)
-            },
-            "BMP_Pressure": {
-                "display_name": "Atmospheric Pressure",
-                "measurements": {"hPa": "Pressure (hPa)"},
-                "grid_position": (2, 2)
-            },
-            "MAX_SPO2 Sensor": {
-                "display_name": "Blood Oxygen Monitor",
-                "measurements": {"SPO2": "Blood Oxygen (%)"},
-                "grid_position": (4, 2)
-            }
-        }
-
-        # Create sensor boxes
-        for sensor_name, config in self.sensor_config.items():
-            # Create box for each sensor
-            sensor_box = QFrame()
-            sensor_box.setObjectName("sensorBox")
-            sensor_box.setProperty("class", "sensor-box")
-            
-            box_layout = QVBoxLayout()
-            
-            # Add title
-            title = QLabel(f"<b>{config['display_name']}</b>")
-            title.setProperty("class", "sensor-title")
-            box_layout.addWidget(title)
-
-            # Add measurements
-            self.data_labels[sensor_name] = {}
-            for key, display_name in config['measurements'].items():
-                value_label = QLabel(f"{display_name}: N/A")
-                value_label.setProperty("class", "sensor-value")
-                self.data_labels[sensor_name][key] = value_label
-                box_layout.addWidget(value_label)
-
-            sensor_box.setLayout(box_layout)
-            row, col = config['grid_position']
-            layout.addWidget(sensor_box, row, col)
-
-        # Add center image
-        center_image = QLabel()
-        center_image.setObjectName("centerImage")
-        # Set a fixed size for the image container
-        center_image.setFixedSize(300, 300)  # Adjust size as needed
-        center_image.setScaledContents(True)
-        
-        # Load and set the image
-        pixmap = QPixmap('assets/Astronaut.png')
-        center_image.setPixmap(pixmap)
-        
-        # Add image to center of grid
-        layout.addWidget(center_image, 0, 1, 5, 1, Qt.AlignCenter)  # spans 5 rows in center column
-
-        # Set stretch factors
-        layout.setColumnStretch(0, 1)  # left column
-        layout.setColumnStretch(1, 1)  # center column
-        layout.setColumnStretch(2, 1)  # right column
-
-        self.data_page.setLayout(layout)
-
-    def update_data_page(self):
-        if hasattr(self, 'latest_data'):
-            for sensor_name, sensor_data in self.latest_data.items():
-                if isinstance(sensor_data, dict) and sensor_name in self.data_labels:
-                    for key, value in sensor_data.items():
-                        if key in self.data_labels[sensor_name]:
-                            display_name = next(
-                                (config['measurements'][key] 
-                                for config in self.sensor_config.values() 
-                                if key in config['measurements']),
-                                key
-                            )
-                            self.data_labels[sensor_name][key].setText(
-                                f"{display_name}: {value:.2f}"
-                            )
-
     def create_navbar(self):
         navbar_widget = QWidget()
         navbar_layout = QHBoxLayout(navbar_widget)
         navbar_layout.setSpacing(30)
+        navbar_layout.setContentsMargins(0, 0, 0, 0) #important
 
+        # Left Buttons
         left_buttons = QWidget()
         left_layout = QHBoxLayout(left_buttons)
+
         home_button = QPushButton("Home")
         home_button.setObjectName("navButton")
         home_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.home_page))
         left_layout.addWidget(home_button)
-        navbar_layout.addWidget(left_buttons)
-
-        navbar_layout.addStretch()
-
-        # Data Page Button  <-  Moved BEFORE logo
-        data_button = QPushButton("Data")
-        data_button.setObjectName("navButton")
-        data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
-        left_layout.addWidget(data_button) #add to left layout
 
 
+        # Logo
         self.logo_label = QLabel()
         pixmap = QPixmap("assets/lunarlogo.png")
         pixmap = pixmap.scaled(250, 80, Qt.KeepAspectRatio)
         self.logo_label.setPixmap(pixmap)
         self.logo_label.setAlignment(Qt.AlignCenter)
-        navbar_layout.addWidget(self.logo_label)
 
-        navbar_layout.addStretch()
-
+        # Right Buttons
         right_buttons = QWidget()
         right_layout = QHBoxLayout(right_buttons)
-        about_button = QPushButton("About")
-        about_button.setObjectName("navButton")
-        about_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.about_page))
-        right_layout.addWidget(about_button)
+
+        data_button = QPushButton("Data")
+        data_button.setObjectName("navButton")
+        data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
+        right_layout.addWidget(data_button)
+
+        # Add widgets to navbar layout with appropriate stretch factors
+        navbar_layout.addWidget(left_buttons)
+        navbar_layout.addStretch()  # Center the logo with stretch
+        navbar_layout.addWidget(self.logo_label)
+        navbar_layout.addStretch()  # Center the logo with stretch
         navbar_layout.addWidget(right_buttons)
 
         navbar = QToolBar()
