@@ -250,7 +250,7 @@ class AstronautMonitor(QMainWindow):
                 "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
                 "grid_position": (2, 0)
             },
-            "MPU_Gyroscope": {
+            "MPU_Accelerometer": {
                 "display_name": "Step Counter",
                 "measurements": {"steps": "Total Steps"},
                 "grid_position": (3, 0)
