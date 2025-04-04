@@ -164,14 +164,12 @@ class NordicBLEWorker(QThread):
 
 
 class AstronautMonitor(QMainWindow):
-    ACTIVITIES = ["No Activity", "Running", "Walking", "Hiking", "Cranking", "Lifting"]
     NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
     UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
     def __init__(self, name, gender, age):
         super().__init__()
         self.setWindowTitle("Physiological Monitoring System")
-        self.resize(1024, 768)
 
         self.load_custom_font()
         
@@ -408,15 +406,29 @@ class AstronautMonitor(QMainWindow):
                             self.data_labels[sensor_name][key].setText(
                                 f"{display_name}: {value:.2f}"
                             )
+                            
+    def set_current_activity(self, activity):
+        # Uncheck all buttons
+        for button in self.activity_buttons.values():
+            button.setChecked(False)
+
+        # Check the selected button
+        self.activity_buttons[activity].setChecked(True)
+
+        # Set the current activity
+        self.current_activity = activity
+        print(f"Current activity set to: {self.current_activity}")
 
 
     def init_data_page(self):
         layout = QVBoxLayout()
         activity_layout = QHBoxLayout()
+        
+        ACTIVITIES = ["No Activity", "Running", "Walking", "Hiking", "Cranking", "Lifting"]
 
         # Create individual buttons for each activity
         self.activity_buttons = {}
-        for activity in self.ACTIVITIES:
+        for activity in ACTIVITIES:
             button = QPushButton(activity)
             button.setCheckable(True)  # Make the button toggleable
             button.clicked.connect(lambda checked, act=activity: self.set_current_activity(act))
@@ -609,6 +621,8 @@ class AstronautMonitor(QMainWindow):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        self.resize(1024, 768)
 
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
@@ -619,7 +633,6 @@ class MainWindow(QMainWindow):
         self.intro_page.profile_submitted.connect(self.start_monitoring)
 
         self.setWindowTitle("Astronaut Health Monitor")
-        self.setGeometry(100, 100, 1024, 768)
 
     def start_monitoring(self, name, gender, age):
         self.monitoring_page = AstronautMonitor(name, gender, age)
