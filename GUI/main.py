@@ -167,6 +167,7 @@ class AstronautMonitor(QMainWindow):
     NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
     UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+
     def __init__(self, name, gender, age):
         super().__init__()
         self.setWindowTitle("Physiological Monitoring System")
@@ -176,6 +177,8 @@ class AstronautMonitor(QMainWindow):
         self.astronaut_name = name
         self.astronaut_gender = gender
         self.astronaut_age = age
+        
+        self.current_activity = "No Activity"
 
         try:
             self.client = MongoClient(os.getenv("MONGODB_URI"))
@@ -241,8 +244,9 @@ class AstronautMonitor(QMainWindow):
 
     def send_to_mongo(self, sensor_data):
         sensor_data['timestamp'] = time.time()
-        sensor_data['activity_id'] = self.activity_combo.currentText()
+        sensor_data['activity_id'] = self.current_activity
         self.mongo_buffer.append(sensor_data)
+        #print(f"Data added to buffer: {sensor_data}")
         
     def flush_mongo_buffer(self):
         if self.mongo_buffer:
@@ -302,7 +306,7 @@ class AstronautMonitor(QMainWindow):
         layout = QGridLayout()
         
         # Header title
-        header_label = QLabel(f"{self.astronaut_name}'s Dashboard")
+        header_label = QLabel(f"Astronaut {self.astronaut_name}'s Dashboard")
         header_label.setObjectName("pageHeader")
         header_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(header_label, 0, 0, 1, 3)  # Title spans 3 columns at the top
