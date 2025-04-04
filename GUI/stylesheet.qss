@@ -1,8 +1,8 @@
 /* General Styles */
 * {
     font-family: 'Segoe UI', sans-serif;
-    font-size: 16px;
-    color: #062a61; /* Dark blue for text */
+    font-size: 18px;
+    color: white; 
 }
 
 /* Main Window */
@@ -25,7 +25,7 @@ QToolBar {
     border: none;
     border-radius: 5px;
     padding: 8px 16px;
-    font-size: 14px;
+    font-size: 18px;
     font-weight: bold;
 }
 
@@ -50,18 +50,10 @@ QToolBar {
     font-weight: bold;
 }
 
-/* About Page Text */
-#aboutText {
-    color: #062a61;
-    font-size: 16px;
-    line-height: 1.6;
-    margin: 20px 40px;
-}
-
 /* Combo Box Styling */
 QComboBox {
     color: black;
-    font-size: 16px;
+    font-size: 18px;
     background-color: white;
     border: 1px solid gray;
     padding: 4px;
@@ -69,12 +61,6 @@ QComboBox {
 
 QComboBox::drop-down {
     border: none;
-}
-
-QComboBox::down-arrow {
-    image: url(down_arrow.png);
-    width: 12px;
-    height: 12px;
 }
 
 QComboBox QAbstractItemView {
@@ -126,10 +112,10 @@ QPushButton:hover {
 
 /* Sensor Titles */
 .sensor-title {
-    font-size: 20px;
+    font-size: 24px;
     font-weight: bold;
     color: #062a61;
-    margin-bottom: 8px;
+    margin-bottom: 20px;
 }
 
 /* Sensor Values */
@@ -152,3 +138,72 @@ QPushButton:hover {
 QGridLayout {
     spacing: 20px;
 }
+
+
+/* --- Intro Page Styling --- */
+#introPage {
+    background-color: white;
+}
+
+/* Form Container */
+#introForm {
+    background-color: #f5f7fa;  /* Light gray background */
+    border: 2px solid #4a90e2;  /* Blue border */
+    border-radius: 12px;
+    padding: 25px;
+    min-width: 500px;
+    width: 100%;  /* Ensures the form is responsive */
+    margin: 0 auto;  /* Center the form horizontally */
+}
+
+/* Title */
+#introTitle {
+    font-size: 36px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 30px;
+    margin-bottom: 30px;
+    color: #062a61;
+}
+
+/* Form Labels */
+#introForm QLabel {
+    font-size: 24px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    color: #062a61;
+}
+
+/* Input Fields */
+#introForm QLineEdit,
+#introForm QComboBox {
+    color: #062a61;
+    font-size: 18px;
+    border: 1px solid #ccc;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+    background-color: white;
+    min-width: 200px;
+    width: 100%;
+}
+
+/* Submit Button */
+#submitButton {
+    background-color: #FF5733;
+    font-size: 18px;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 12px;
+    width: 100%;
+    font-weight: bold;
+    min-width: 200px;
+    margin-top: 30px;
+}
+
+#submitButton:hover {
+    background-color: #D94E2F;
+}
+
+

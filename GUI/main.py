@@ -1,9 +1,11 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QToolBar,
-    QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame
+    QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame,
+    QFormLayout, QLineEdit, QMessageBox, QStackedWidget
 )
+
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QPixmap, QFontDatabase, QFont
+from PySide6.QtGui import QPixmap, QFontDatabase, QFont, QIntValidator
 from bleak import BleakClient
 from pymongo import MongoClient
 import time
@@ -15,11 +17,83 @@ import json
 import sys
 import os
 import numpy as np
-import logging #Import logging
-import re       #Import regex
+import logging
+import re     
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+class IntroPage(QWidget):
+    profile_submitted = Signal(str, str, int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("introPage") 
+
+        self.initUI()
+
+    def initUI(self):
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Form container with styling applied
+        form_widget = QWidget()
+        form_widget.setObjectName("introForm")  
+        form_layout = QFormLayout(form_widget)
+        form_layout.setContentsMargins(50, 30, 50, 30)
+
+        # Title
+        title_label = QLabel("Astronaut Profile Setup")
+        title_label.setObjectName("introTitle")  
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title_label)
+
+        # Name input field
+        self.name_input = QLineEdit()
+        self.name_input.setObjectName("introForm") 
+        self.name_input.setPlaceholderText("Enter astronaut's name")
+        form_layout.addRow(QLabel("Name:"), self.name_input)
+
+        # Gender selection
+        self.gender_combo = QComboBox()
+        self.gender_combo.setObjectName("introForm") 
+        self.gender_combo.addItems(["Male", "Female", "Other"])
+        form_layout.addRow(QLabel("Gender:"), self.gender_combo)
+
+        # Age input
+        self.age_input = QLineEdit()
+        self.age_input.setObjectName("introForm") 
+        self.age_input.setPlaceholderText("Enter astronaut's age")
+        self.age_input.setValidator(QIntValidator(self)) 
+        self.age_input.setMaxLength(2) 
+        form_layout.addRow(QLabel("Age:"), self.age_input)
+
+        layout.addWidget(form_widget)
+
+        # Submit button
+        self.submit_button = QPushButton("Start Monitoring")
+        self.submit_button.setObjectName("submitButton")  
+        self.submit_button.clicked.connect(self.submit_profile)
+
+        # Center the button
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(self.submit_button)
+        button_layout.addStretch()
+        layout.addLayout(button_layout)
+
+        layout.addStretch()
+
+    def submit_profile(self):
+        name = self.name_input.text().strip()
+        gender = self.gender_combo.currentText()
+        age_text = self.age_input.text().strip()
+
+        # Validate name and age
+        if not name or not age_text:
+            QMessageBox.warning(self, "Input Error", "Please enter the astronaut's name and age.")
+            return
+
+        age = int(age_text)
+
+        self.profile_submitted.emit(name, gender, age)
 
 class NordicBLEWorker(QThread):
     data_received = Signal(dict)
@@ -90,19 +164,21 @@ class NordicBLEWorker(QThread):
 
 
 class AstronautMonitor(QMainWindow):
-    ACTIVITIES = ["Running", "Walking", "Hiking", "Jumping", "Lifting"]
+    ACTIVITIES = ["No Activity", "Running", "Walking", "Hiking", "Cranking", "Lifting"]
     NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
-    # DONGLE_DEVICE_MAC = "CF:8C:8F:A7:C4:A4"
     UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
-    def __init__(self):
+    def __init__(self, name, gender, age):
         super().__init__()
         self.setWindowTitle("Physiological Monitoring System")
         self.resize(1024, 768)
-        
-        self.load_custom_font()
 
-        # MongoDB setup
+        self.load_custom_font()
+        
+        self.astronaut_name = name
+        self.astronaut_gender = gender
+        self.astronaut_age = age
+
         try:
             self.client = MongoClient(os.getenv("MONGODB_URI"))
             self.db = self.client["LunarVitalsDB"]
@@ -123,15 +199,13 @@ class AstronautMonitor(QMainWindow):
         self.init_data_buffers()
 
         self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
-        # self.worker = NordicBLEWorker(self.DONGLE_DEVICE_MAC, self.UART_RX_UUID)
         self.worker.data_received.connect(self.handle_ble_data)
         self.worker.start()
 
         self.initUI()
-        
+
         self.mongo_buffer = []
 
-        # Timer for updating charts
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.flush_mongo_buffer)
         self.update_timer.timeout.connect(self.update_home_page)
@@ -139,8 +213,8 @@ class AstronautMonitor(QMainWindow):
         self.update_timer.start(100)
 
         self.current_chart_type = None
-        self.data_counter = 0
-        self.downsample_rate = 1
+
+        print(f"Astronaut Profile - Name: {self.astronaut_name}, Gender: {self.astronaut_gender}, Age: {self.astronaut_age}")
         
     def load_custom_font(self):
         self.custom_font_id = QFontDatabase.addApplicationFont("assets/MegatransdemoRegular-8M9B0.otf")
@@ -181,7 +255,6 @@ class AstronautMonitor(QMainWindow):
                 logging.error(f"Error inserting into MongoDB: {e}")
 
     def handle_ble_data(self, data):
-        self.data_counter += 1
         current_time = time.time()
 
         try:
@@ -231,7 +304,7 @@ class AstronautMonitor(QMainWindow):
         layout = QGridLayout()
         
         # Header title
-        header_label = QLabel("Physiological Monitoring Dashboard")
+        header_label = QLabel(f"{self.astronaut_name}'s Dashboard")
         header_label.setObjectName("pageHeader")
         header_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(header_label, 0, 0, 1, 3)  # Title spans 3 columns at the top
@@ -339,13 +412,16 @@ class AstronautMonitor(QMainWindow):
 
     def init_data_page(self):
         layout = QVBoxLayout()
-
         activity_layout = QHBoxLayout()
-        activity_label = QLabel("Current Activity:")
-        self.activity_combo = QComboBox()
-        self.activity_combo.addItems(self.ACTIVITIES)
-        activity_layout.addWidget(activity_label)
-        activity_layout.addWidget(self.activity_combo)
+
+        # Create individual buttons for each activity
+        self.activity_buttons = {}
+        for activity in self.ACTIVITIES:
+            button = QPushButton(activity)
+            button.setCheckable(True)  # Make the button toggleable
+            button.clicked.connect(lambda checked, act=activity: self.set_current_activity(act))
+            self.activity_buttons[activity] = button
+            activity_layout.addWidget(button)
 
         # Create a widget to hold the activity layout
         activity_widget = QWidget()
@@ -440,8 +516,6 @@ class AstronautMonitor(QMainWindow):
     def update_current_chart(self):
         if not self.current_chart_type:
             return
-        if self.data_counter % self.downsample_rate != 0:
-            return
 
         if self.timestamps:
             first_timestamp = self.timestamps[0]
@@ -452,13 +526,11 @@ class AstronautMonitor(QMainWindow):
             if self.pulse and self.timestamps:
                 pulse_np = np.array(self.pulse)
                 self.pulse_plot.setData(relative_timestamps, pulse_np)
-                self.pulse_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
         elif self.current_chart_type == 'resp':
             if self.resp and self.timestamps:
                 resp_np = np.array(self.resp)
                 self.resp_plot.setData(relative_timestamps[:len(resp_np)], resp_np)
-                self.resp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
         elif self.current_chart_type == 'accel':
             if self.accel_x and self.timestamps:
@@ -468,9 +540,6 @@ class AstronautMonitor(QMainWindow):
                 self.accel_x_plot.setData(relative_timestamps[:len(accel_x_np)], accel_x_np)
                 self.accel_y_plot.setData(relative_timestamps[:len(accel_y_np)], accel_y_np)
                 self.accel_z_plot.setData(relative_timestamps[:len(accel_z_np)], accel_z_np)
-                self.accel_x_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
-                self.accel_y_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
-                self.accel_z_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
         elif self.current_chart_type == 'gyro':
             if self.gyro_x and self.timestamps:
@@ -480,9 +549,6 @@ class AstronautMonitor(QMainWindow):
                 self.gyro_x_plot.setData(relative_timestamps[:len(gyro_x_np)], gyro_x_np)
                 self.gyro_y_plot.setData(relative_timestamps[:len(gyro_y_np)], gyro_y_np)
                 self.gyro_z_plot.setData(relative_timestamps[:len(gyro_z_np)], gyro_z_np)
-                self.gyro_x_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
-                self.gyro_y_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
-                self.gyro_z_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
         elif self.current_chart_type == 'temp':
             if self.obj_temp and self.timestamps:
@@ -490,8 +556,6 @@ class AstronautMonitor(QMainWindow):
                 amb_temp_np = np.array(self.amb_temp)
                 self.obj_temp_plot.setData(relative_timestamps[:len(obj_temp_np)], obj_temp_np)
                 self.amb_temp_plot.setData(relative_timestamps[:len(amb_temp_np)], amb_temp_np)
-                self.obj_temp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
-                self.amb_temp_plot.setDownsampling(method='subsample', auto=True, ds=self.downsample_rate)
 
     def create_navbar(self):
         navbar_widget = QWidget()
@@ -542,12 +606,32 @@ class AstronautMonitor(QMainWindow):
         self.update_timer.stop()
         event.accept()
 
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.stack = QStackedWidget()
+        self.setCentralWidget(self.stack)
+
+        self.intro_page = IntroPage()
+        self.stack.addWidget(self.intro_page)
+
+        self.intro_page.profile_submitted.connect(self.start_monitoring)
+
+        self.setWindowTitle("Astronaut Health Monitor")
+        self.setGeometry(100, 100, 1024, 768)
+
+    def start_monitoring(self, name, gender, age):
+        self.monitoring_page = AstronautMonitor(name, gender, age)
+        self.stack.addWidget(self.monitoring_page)
+        self.stack.setCurrentWidget(self.monitoring_page)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     with open('stylesheet.qss', 'r') as file:
-        style_sheet = file.read()
-        app.setStyleSheet(style_sheet)
-    window = AstronautMonitor()
+        app.setStyleSheet(file.read())
+
+    window = MainWindow()
     window.show()
+
     sys.exit(app.exec())
