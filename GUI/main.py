@@ -179,9 +179,14 @@ class AstronautMonitor(QMainWindow):
         self.astronaut_age = age
         
         self.current_activity = "No Activity"
+        
+        load_dotenv()
+        
+        MONGODB_URI = os.getenv("MONGODB_URI")
+        # print(f"MONGODB_URI: {MONGODB_URI}")
 
         try:
-            self.client = MongoClient(os.getenv("MONGODB_URI"))
+            self.client = MongoClient(MONGODB_URI)
             self.db = self.client["LunarVitalsDB"]
             self.collection = self.db["sensor_data"]
         except Exception as e:
@@ -421,7 +426,7 @@ class AstronautMonitor(QMainWindow):
 
         # Set the current activity
         self.current_activity = activity
-        print(f"Current activity set to: {self.current_activity}")
+        #print(f"Current activity set to: {self.current_activity}")
 
 
     def init_data_page(self):
