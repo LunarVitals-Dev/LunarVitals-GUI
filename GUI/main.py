@@ -18,7 +18,8 @@ import sys
 import os
 import numpy as np
 import logging
-import re     
+import re    
+from functools import partial 
 
 class IntroPage(QWidget):
     profile_submitted = Signal(str, str, int)
@@ -49,12 +50,14 @@ class IntroPage(QWidget):
         self.name_input = QLineEdit()
         self.name_input.setObjectName("introForm") 
         self.name_input.setPlaceholderText("Enter astronaut's name")
+        self.name_input.setText("Peak") # need to comment out
         form_layout.addRow(QLabel("Name:"), self.name_input)
 
         # Gender selection
         self.gender_combo = QComboBox()
         self.gender_combo.setObjectName("introForm") 
         self.gender_combo.addItems(["Male", "Female", "Other"])
+        self.gender_combo.setCurrentText("Male") # need to comment out
         form_layout.addRow(QLabel("Gender:"), self.gender_combo)
 
         # Age input
@@ -63,6 +66,7 @@ class IntroPage(QWidget):
         self.age_input.setPlaceholderText("Enter astronaut's age")
         self.age_input.setValidator(QIntValidator(self)) 
         self.age_input.setMaxLength(2) 
+        self.age_input.setText("21") # need to comment out
         form_layout.addRow(QLabel("Age:"), self.age_input)
 
         layout.addWidget(form_widget)
@@ -170,8 +174,6 @@ class AstronautMonitor(QMainWindow):
 
     def __init__(self, name, gender, age):
         super().__init__()
-        self.setWindowTitle("Physiological Monitoring System")
-
         self.load_custom_font()
         
         self.astronaut_name = name
@@ -220,7 +222,7 @@ class AstronautMonitor(QMainWindow):
 
         self.current_chart_type = None
 
-        print(f"Astronaut Profile - Name: {self.astronaut_name}, Gender: {self.astronaut_gender}, Age: {self.astronaut_age}")
+        # print(f"Astronaut Profile - Name: {self.astronaut_name}, Gender: {self.astronaut_gender}, Age: {self.astronaut_age}")
         
     def load_custom_font(self):
         self.custom_font_id = QFontDatabase.addApplicationFont("assets/MegatransdemoRegular-8M9B0.otf")
@@ -301,10 +303,13 @@ class AstronautMonitor(QMainWindow):
         self.setCentralWidget(self.central_stack)
         self.home_page = QWidget()
         self.data_page = QWidget()  
+        self.about_page = QWidget()
         self.init_home_page()
         self.init_data_page() 
+        self.init_about_page()
         self.central_stack.addWidget(self.home_page)
-        self.central_stack.addWidget(self.data_page)  
+        self.central_stack.addWidget(self.data_page)
+        self.central_stack.addWidget(self.about_page)  
         self.create_navbar()
         
     def init_home_page(self):
@@ -351,6 +356,16 @@ class AstronautMonitor(QMainWindow):
                 "grid_position": (3, 2)
             }
         }
+        
+        # Maps sensor_name to chart type string for update_chart
+        self.sensor_to_chart_type = {
+            "PulseSensor": "pulse",
+            "RespiratoryRate": "resp",
+            "MPU_Accelerometer": "accel",
+            "MLX_ObjectTemperature": "temp",
+            "BMP_Pressure": "pressure", 
+            "MAX_SPO2 Sensor": "spo2"
+        }
 
         # Create sensor boxes
         for sensor_name, config in self.sensor_config.items():
@@ -359,11 +374,18 @@ class AstronautMonitor(QMainWindow):
             sensor_box.setProperty("class", "sensor-box")
 
             box_layout = QVBoxLayout()
-            title = QLabel(f"<b>{config['display_name']}</b>")
+            # Create button instead of label for the display name
+            title_button = QPushButton(config['display_name'])
             if self.custom_font:
-                title.setFont(self.custom_font)
-            title.setProperty("class", "sensor-title")
-            box_layout.addWidget(title)
+                title_button.setFont(self.custom_font)
+            title_button.setProperty("class", "sensor-title-button")
+
+            # Connect to update_chart with mapped chart type
+            chart_type = self.sensor_to_chart_type.get(sensor_name)
+            if chart_type:
+                title_button.clicked.connect(lambda _, c=chart_type: self.update_chart(c))
+
+            box_layout.addWidget(title_button)
 
             self.data_labels[sensor_name] = {}
             for key, display_name in config['measurements'].items():
@@ -464,23 +486,43 @@ class AstronautMonitor(QMainWindow):
         self.accel_button = QPushButton("Accelerometer")
         self.gyro_button = QPushButton("Gyroscope")
         self.temp_button = QPushButton("Temperature")
+        self.pres_button = QPushButton("Pressure")
         buttons_layout.addWidget(self.pulse_button)
         buttons_layout.addWidget(self.resp_button)
         buttons_layout.addWidget(self.accel_button)
         buttons_layout.addWidget(self.gyro_button)
         buttons_layout.addWidget(self.temp_button)
+        buttons_layout.addWidget(self.pres_button)
 
         self.pulse_button.clicked.connect(lambda: self.update_chart('pulse'))
         self.resp_button.clicked.connect(lambda: self.update_chart('resp'))
         self.accel_button.clicked.connect(lambda: self.update_chart('accel'))
         self.gyro_button.clicked.connect(lambda: self.update_chart('gyro'))
         self.temp_button.clicked.connect(lambda: self.update_chart('temp'))
+        self.pres_button.clicked.connect(lambda: self.update_chart('pressure'))
         layout.addWidget(buttons_widget)
 
         self.chart_widget = pg.PlotWidget()
         self.setup_chart(self.chart_widget, "Sensor Data")
         layout.addWidget(self.chart_widget)
         self.data_page.setLayout(layout)
+        
+    # about page that explains the project and our mission
+    def init_about_page(self):
+        layout = QVBoxLayout()
+        about_label = QLabel("About the Project")
+        about_label.setObjectName("aboutTitle")
+        about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(about_label)
+
+        about_text = QLabel("This project is designed to monitor the health and physiological data of astronauts during their missions. "
+                            "The system collects data from various sensors and displays it in real-time, ensuring that astronauts' health is continuously monitored.")
+        about_text.setObjectName("aboutText")
+        layout.addWidget(about_text)
+
+        self.about_page = QWidget()
+        self.about_page.setLayout(layout)
+        self.about_page.setObjectName("aboutPage")
 
     def setup_chart(self, chart_widget, title):
         chart_widget.setBackground('white')
@@ -533,6 +575,13 @@ class AstronautMonitor(QMainWindow):
             self.obj_temp_plot = self.chart_widget.plot(pen='r')
             self.amb_temp_plot = self.chart_widget.plot(pen='g')
             self.update_current_chart()
+            
+        elif sensor_type == 'pressure':
+            self.chart_widget.setTitle("Pressure Data")
+            self.chart_widget.setLabel('bottom', "Time", units='s')
+            self.chart_widget.setLabel('left', "Pressure", units='hPa')
+            self.pressure_plot = self.chart_widget.plot(pen='r')
+            self.update_current_chart()
 
     def update_current_chart(self):
         if not self.current_chart_type:
@@ -577,12 +626,17 @@ class AstronautMonitor(QMainWindow):
                 amb_temp_np = np.array(self.amb_temp)
                 self.obj_temp_plot.setData(relative_timestamps[:len(obj_temp_np)], obj_temp_np)
                 self.amb_temp_plot.setData(relative_timestamps[:len(amb_temp_np)], amb_temp_np)
+                
+        elif self.current_chart_type == 'pressure':
+            if self.pressure and self.timestamps:
+                pressure_np = np.array(self.pressure)
+                self.pressure_plot.setData(relative_timestamps[:len(pressure_np)], pressure_np)
 
     def create_navbar(self):
         navbar_widget = QWidget()
         navbar_layout = QHBoxLayout(navbar_widget)
         navbar_layout.setSpacing(30)
-        navbar_layout.setContentsMargins(0, 0, 0, 0) #important
+        navbar_layout.setContentsMargins(0, 0, 0, 0) 
 
         # Left Buttons
         left_buttons = QWidget()
@@ -592,7 +646,11 @@ class AstronautMonitor(QMainWindow):
         home_button.setObjectName("navButton")
         home_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.home_page))
         left_layout.addWidget(home_button)
-
+        
+        data_button = QPushButton("Sensors")
+        data_button.setObjectName("navButton")
+        data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
+        left_layout.addWidget(data_button)
 
         # Logo
         self.logo_label = QLabel()
@@ -605,11 +663,16 @@ class AstronautMonitor(QMainWindow):
         right_buttons = QWidget()
         right_layout = QHBoxLayout(right_buttons)
 
-        data_button = QPushButton("Data")
-        data_button.setObjectName("navButton")
-        data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
-        right_layout.addWidget(data_button)
-
+        about_button = QPushButton("About")
+        about_button.setObjectName("navButton")
+        about_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.about_page))
+        right_layout.addWidget(about_button)
+        
+        # Button called connect that would refresh the GUI in case the connection dropped
+        connect_button = QPushButton("Connect")
+        connect_button.setObjectName("navButton")
+        right_layout.addWidget(connect_button)
+    
         # Add widgets to navbar layout with appropriate stretch factors
         navbar_layout.addWidget(left_buttons)
         navbar_layout.addStretch()  # Center the logo with stretch
@@ -630,8 +693,6 @@ class AstronautMonitor(QMainWindow):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        
-        self.resize(1024, 768)
 
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
@@ -642,11 +703,15 @@ class MainWindow(QMainWindow):
         self.intro_page.profile_submitted.connect(self.start_monitoring)
 
         self.setWindowTitle("Astronaut Health Monitor")
+        
+        self.resize(1024, 768)
 
     def start_monitoring(self, name, gender, age):
         self.monitoring_page = AstronautMonitor(name, gender, age)
         self.stack.addWidget(self.monitoring_page)
         self.stack.setCurrentWidget(self.monitoring_page)
+        
+        self.resize(1024, 768)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
