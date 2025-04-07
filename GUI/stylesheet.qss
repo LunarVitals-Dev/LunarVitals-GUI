@@ -208,7 +208,7 @@ QGridLayout {
 
 #aboutPage {
     background-color: white; /* White background for consistency */
-    padding: 20px; /* Add padding around the content */
+    padding: 10px; /* Add padding around the content */
 }
 
 #aboutTitle {
@@ -216,19 +216,15 @@ QGridLayout {
     font-weight: bold;
     color: #062a61; /* Dark blue color for the title */
     text-align: center;
-    margin-top: 20px;
-    margin-bottom: 20px;
 }
 
 #aboutText {
     font-size: 18px;
     color: #333333; /* Dark gray text for readability */
     line-height: 1.6; /* Improve readability with proper line spacing */
-    padding: 15px;
+    padding: 10px;
     border: 2px solid #4a90e2; /* Blue border to match the theme */
     border-radius: 10px; /* Rounded corners for a clean look */
     background-color: #f5f7fa; /* Light gray background for the text area */
-    margin-top: 20px;
 }
-
 

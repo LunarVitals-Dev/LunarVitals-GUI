@@ -165,6 +165,19 @@ class NordicBLEWorker(QThread):
         if self._client:
             self._stop_event.set()
         self.quit()
+        
+    def reset_connection(self):
+        """Reset the Bluetooth connection."""
+        if self._client:
+            try:
+                asyncio.run(self._client.disconnect())  # Disconnect the current client
+                logging.info("Disconnected from BLE device.")
+            except Exception as e:
+                logging.error(f"Error disconnecting from BLE device: {e}")
+
+        # Reinitialize the connection
+        self._stop_event.clear()
+        asyncio.run(self.connect_and_listen())
 
 
 class AstronautMonitor(QMainWindow):
@@ -515,9 +528,9 @@ class AstronautMonitor(QMainWindow):
         about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(about_label)
 
-        about_text = QLabel("This project is designed to monitor the health and physiological data of astronauts during their missions. "
-                            "The system collects data from various sensors and displays it in real-time, ensuring that astronauts' health is continuously monitored.")
+        about_text = QLabel("Lunar extravehicular activities (EVAs) are long missions that require astronauts to perform various tasks under extreme conditions with limited consumables. To combat the safety risk of over-depleting critical resources, we created a wearable biomonitoring system that measures, analyzes, and predicts physiological signals: including heart rate, blood oxygen saturation, respiration rate, body temperature, and step count. These signals are collected by a suite of sensors, which collects the data, filters it, and transmits it via Bluetooth to a database, where it is displayed here. Our solution aims to improve mission safety and efficiency and serve as a foundation for support in human space exploration.")
         about_text.setObjectName("aboutText")
+        about_text.setWordWrap(True)  # Enable word wrapping
         layout.addWidget(about_text)
 
         self.about_page = QWidget()
@@ -631,6 +644,24 @@ class AstronautMonitor(QMainWindow):
             if self.pressure and self.timestamps:
                 pressure_np = np.array(self.pressure)
                 self.pressure_plot.setData(relative_timestamps[:len(pressure_np)], pressure_np)
+                
+    def refresh_monitoring_page(self):
+        """Refresh the monitoring page by resetting the Bluetooth connection."""
+        if self.worker and self.worker.isRunning():
+            logging.info("Resetting Bluetooth connection...")
+            self.worker.reset_connection()  # Reset the connection within the thread
+        else:
+            logging.warning("BLE worker is not running. Starting a new connection...")
+            self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
+            self.worker.data_received.connect(self.handle_ble_data)
+            self.worker.start()
+
+        # Optionally, clear the chart and reset buffers
+        self.init_data_buffers()
+        self.current_chart_type = None
+        self.chart_widget.clear()
+
+        logging.info("Monitoring page refreshed.")
 
     def create_navbar(self):
         navbar_widget = QWidget()
@@ -671,6 +702,7 @@ class AstronautMonitor(QMainWindow):
         # Button called connect that would refresh the GUI in case the connection dropped
         connect_button = QPushButton("Connect")
         connect_button.setObjectName("navButton")
+        connect_button.clicked.connect(self.refresh_monitoring_page)  # Connect to the refresh function
         right_layout.addWidget(connect_button)
     
         # Add widgets to navbar layout with appropriate stretch factors
