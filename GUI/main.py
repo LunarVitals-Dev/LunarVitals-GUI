@@ -325,6 +325,49 @@ class AstronautMonitor(QMainWindow):
         self.central_stack.addWidget(self.about_page)  
         self.create_navbar()
         
+    def switch_to_chart(self, chart_type):
+        # Switch to the data page (assuming self.central_stack is your QStackedWidget)
+        self.central_stack.setCurrentWidget(self.data_page)
+        # Update the chart in the data page with the selected sensor type
+        self.update_chart(chart_type)
+        
+    def create_sensor_box(self, sensor_name, config):
+        # Create a container for the sensor box.
+        sensor_box = QFrame()
+        sensor_box.setObjectName("sensorBox")
+        sensor_box.setProperty("class", "sensor-box")
+
+        box_layout = QVBoxLayout()
+        
+        # Only add a title if it is not the blood oxygen sensor.
+        if sensor_name != "MAX_SPO2 Sensor":
+            title_button = QPushButton(config['display_name'])
+            if self.custom_font:
+                title_button.setFont(self.custom_font)
+            title_button.setProperty("class", "sensor-title-button")
+            
+            # Get the chart type (if any) for routing.
+            chart_type = self.sensor_to_chart_type.get(sensor_name)
+            if chart_type:
+                # Use a helper to capture chart_type for this sensor.
+                def make_callback(chart_type_value):
+                    return lambda checked: self.switch_to_chart(chart_type_value)
+                title_button.clicked.connect(make_callback(chart_type))
+            box_layout.addWidget(title_button)
+        
+        # Create measurement label(s). For Blood Oxygen, it will be the only widget.
+        self.data_labels[sensor_name] = {}
+        for key, display_name in config['measurements'].items():
+            value_label = QLabel(f"{display_name}: N/A")
+            if self.custom_font:
+                value_label.setFont(self.custom_font)
+            value_label.setProperty("class", "sensor-value")
+            self.data_labels[sensor_name][key] = value_label
+            box_layout.addWidget(value_label)
+
+        sensor_box.setLayout(box_layout)
+        return sensor_box
+        
     def init_home_page(self):
         layout = QGridLayout()
         
@@ -365,7 +408,7 @@ class AstronautMonitor(QMainWindow):
             },
             "MAX_SPO2 Sensor": {
                 "display_name": "Blood Oxygen Monitor",
-                "measurements": {"SPO2": "Blood Oxygen (%)"},
+                "measurements": {"SPO2": "Blood Oxygen Level"},
                 "grid_position": (3, 2)
             }
         }
@@ -377,39 +420,11 @@ class AstronautMonitor(QMainWindow):
             "MPU_Accelerometer": "accel",
             "MLX_ObjectTemperature": "temp",
             "BMP_Pressure": "pressure", 
-            "MAX_SPO2 Sensor": "spo2"
         }
 
-        # Create sensor boxes
+        # Create sensor boxes using the helper function
         for sensor_name, config in self.sensor_config.items():
-            sensor_box = QFrame()
-            sensor_box.setObjectName("sensorBox")
-            sensor_box.setProperty("class", "sensor-box")
-
-            box_layout = QVBoxLayout()
-            # Create button instead of label for the display name
-            title_button = QPushButton(config['display_name'])
-            if self.custom_font:
-                title_button.setFont(self.custom_font)
-            title_button.setProperty("class", "sensor-title-button")
-
-            # Connect to update_chart with mapped chart type
-            chart_type = self.sensor_to_chart_type.get(sensor_name)
-            if chart_type:
-                title_button.clicked.connect(lambda _, c=chart_type: self.update_chart(c))
-
-            box_layout.addWidget(title_button)
-
-            self.data_labels[sensor_name] = {}
-            for key, display_name in config['measurements'].items():
-                value_label = QLabel(f"{display_name}: N/A")
-                if self.custom_font:
-                    value_label.setFont(self.custom_font)
-                value_label.setProperty("class", "sensor-value")
-                self.data_labels[sensor_name][key] = value_label
-                box_layout.addWidget(value_label)
-
-            sensor_box.setLayout(box_layout)
+            sensor_box = self.create_sensor_box(sensor_name, config)
             row, col = config['grid_position']
             layout.addWidget(sensor_box, row, col)
 
@@ -440,16 +455,31 @@ class AstronautMonitor(QMainWindow):
             for sensor_name, sensor_data in self.latest_data.items():
                 if isinstance(sensor_data, dict) and sensor_name in self.data_labels:
                     for key, value in sensor_data.items():
-                        if key in self.data_labels[sensor_name]:
-                            display_name = next(
-                                (config['measurements'][key] 
-                                for config in self.sensor_config.values() 
-                                if key in config['measurements']),
-                                key
-                            )
+                        display_name = next(
+                            (config['measurements'][key] 
+                            for config in self.sensor_config.values() 
+                            if key in config['measurements']),
+                            key
+                        )
+                        # Special handling for blood oxygen sensor (SPO2)
+                        if sensor_name == "MAX_SPO2 Sensor" and key == "SPO2":
+                            # Convert percentage to status message and assign color
+                            if value >= 95:
+                                level = "Normal"
+                                color = "green"
+                            elif value >= 90:
+                                level = "Warning"
+                                color = "orange"
+                            else:
+                                level = "Critical"
+                                color = "red"
+                            # Set the label text with HTML styling
                             self.data_labels[sensor_name][key].setText(
-                                f"{display_name}: {value:.2f}"
+                                f'<span style="color:{color}">{display_name}: {level}</span>'
                             )
+                        else:
+                            self.data_labels[sensor_name][key].setText(f"{display_name}: {value:.2f}")
+
                             
     def set_current_activity(self, activity):
         # Uncheck all buttons
@@ -550,14 +580,14 @@ class AstronautMonitor(QMainWindow):
         self.chart_widget.clear()
 
         if sensor_type == 'pulse':
-            self.chart_widget.setTitle("Pulse Rate")
+            self.chart_widget.setTitle("Heart Rate")
             self.chart_widget.setLabel('bottom', "Time", units='s')
             self.chart_widget.setLabel('left', "Value", units='mV')
             self.pulse_plot = self.chart_widget.plot(pen='r')
             self.update_current_chart()
 
         elif sensor_type == 'resp':
-            self.chart_widget.setTitle("Respiratory Rate")
+            self.chart_widget.setTitle("Breathing Rate")
             self.chart_widget.setLabel('bottom', "Time", units='s')
             self.chart_widget.setLabel('left', "Value", units='mV')
             self.resp_plot = self.chart_widget.plot(pen='r')
