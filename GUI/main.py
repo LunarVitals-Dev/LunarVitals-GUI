@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QFormLayout, QLineEdit, QMessageBox, QStackedWidget
 )
 
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject
 from PySide6.QtGui import QPixmap, QFontDatabase, QFont, QIntValidator
 from bleak import BleakClient
 from pymongo import MongoClient
@@ -18,8 +18,34 @@ import sys
 import os
 import numpy as np
 import logging
-import re    
-from functools import partial 
+import re  
+  
+import joblib
+import numpy as np
+import tensorflow as tf
+import random
+from tensorflow.keras import layers
+from bluetooth import NordicBLEWorker
+
+# Load the trained model and preprocessing objects
+class MLManager(QObject):
+    # Define a signal that emits three objects (model, scaler, encoder)
+    artifacts_ready = Signal(object, object, object)
+
+    def __init__(self):
+        super().__init__()
+
+    def load_artifacts(self):
+        try:
+            # Load your trained model and preprocessing objects
+            model = tf.keras.models.load_model("activity_model_mongodb.keras")
+            scaler = joblib.load("feature_scaler_mongodb.joblib")
+            encoder = joblib.load("activity_encoder_mongodb.joblib")
+            print("Loaded trained model and preprocessing objects.")
+            # Emit the loaded artifacts
+            self.artifacts_ready.emit(model, scaler, encoder)
+        except Exception as e:
+            print("Error loading trained artifacts:", e)
 
 class IntroPage(QWidget):
     profile_submitted = Signal(str, str, int)
@@ -99,87 +125,6 @@ class IntroPage(QWidget):
 
         self.profile_submitted.emit(name, gender, age)
 
-class NordicBLEWorker(QThread):
-    data_received = Signal(dict)
-
-    def __init__(self, mac_address, rx_uuid):
-        super().__init__()
-        self.mac_address = mac_address
-        self.rx_uuid = rx_uuid
-        self.running = True
-        self.received_data = ""
-        self._client = None
-        self._stop_event = asyncio.Event()
-
-    async def connect_and_listen(self):
-        try:
-            async with BleakClient(self.mac_address) as client:
-                self._client = client
-                logging.info(f"Connected to Nordic BLE Device: {self.mac_address}")
-
-                def callback(sender, data):
-                    try:
-                        message = data.decode('utf-8')
-                        self.received_data += message
-                        self.process_received_data()
-
-                    except Exception as e:
-                        logging.error(f"Error in BLE callback: {e}")
-
-                await client.start_notify(self.rx_uuid, callback)
-
-                while self.running:
-                    await asyncio.sleep(0.1) # Sleep to prevent blocking the event loop
-                    if self._stop_event.is_set():
-                        break
-
-                await client.stop_notify(self.rx_uuid)
-        except Exception as e:
-            logging.error(f"BLE connection error: {e}")
-        finally:
-            self._client = None
-
-    def process_received_data(self):
-        #Use regex to split by complete JSON arrays
-        json_pattern = r'\[.*?\]'
-        json_objects = re.findall(json_pattern, self.received_data)
-
-        #Clear processed data
-        self.received_data = self.received_data[len("".join(json_objects)):]
-
-        for json_str in json_objects:
-            try:
-                #Load JSON string to object, stripping square brackets
-                data = json.loads(json_str[1:-1])
-                self.data_received.emit(data)
-            except json.JSONDecodeError as e:
-                logging.error(f"JSON Decode Error: {e}.  Problematic JSON String: {json_str}")
-            except Exception as e:
-                logging.error(f"Error processing JSON: {e}")
-
-    def run(self):
-        asyncio.run(self.connect_and_listen())
-
-    def stop(self):
-        self.running = False
-        if self._client:
-            self._stop_event.set()
-        self.quit()
-        
-    def reset_connection(self):
-        """Reset the Bluetooth connection."""
-        if self._client:
-            try:
-                asyncio.run(self._client.disconnect())  # Disconnect the current client
-                logging.info("Disconnected from BLE device.")
-            except Exception as e:
-                logging.error(f"Error disconnecting from BLE device: {e}")
-
-        # Reinitialize the connection
-        self._stop_event.clear()
-        asyncio.run(self.connect_and_listen())
-
-
 class AstronautMonitor(QMainWindow):
     NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
     UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
@@ -192,6 +137,10 @@ class AstronautMonitor(QMainWindow):
         self.astronaut_name = name
         self.astronaut_gender = gender
         self.astronaut_age = age
+        
+        self.model = None
+        self.scaler = None
+        self.encoder = None
         
         self.current_activity = "No Activity"
         
@@ -218,10 +167,13 @@ class AstronautMonitor(QMainWindow):
         }
 
         self.init_data_buffers()
-
-        self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
-        self.worker.data_received.connect(self.handle_ble_data)
-        self.worker.start()
+        
+        self.setup_ble_worker()
+        
+        # Create and use an instance of MLManager to load the artifacts.
+        self.ml_manager = MLManager()
+        self.ml_manager.artifacts_ready.connect(self.on_artifacts_ready)
+        self.ml_manager.load_artifacts()
 
         self.initUI()
 
@@ -236,6 +188,20 @@ class AstronautMonitor(QMainWindow):
         self.current_chart_type = None
 
         # print(f"Astronaut Profile - Name: {self.astronaut_name}, Gender: {self.astronaut_gender}, Age: {self.astronaut_age}")
+    
+    def on_artifacts_ready(self, model, scaler, encoder):
+        # This slot is called when the MLManager has loaded your artifacts.
+        self.model = model
+        self.scaler = scaler
+        self.encoder = encoder
+        print("ML artifacts are ready for use in predictions.")
+         
+    def setup_ble_worker(self):
+        # Instantiate the BLE worker with your device's MAC address and the RX characteristic UUID.
+        self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
+        # Connect the data_received signal from BLE worker to your BLE data handler.
+        self.ble_worker.data_received.connect(self.handle_ble_data)
+        self.ble_worker.start()
         
     def load_custom_font(self):
         self.custom_font_id = QFontDatabase.addApplicationFont("assets/MegatransdemoRegular-8M9B0.otf")
@@ -275,6 +241,11 @@ class AstronautMonitor(QMainWindow):
                 self.mongo_buffer = []
             except Exception as e:
                 logging.error(f"Error inserting into MongoDB: {e}")
+                
+    def update_prediction_display(self, prediction):
+        """Update the UI with the predicted activity."""
+        self.label.setText(f"Predicted Activity: {prediction}")
+        print(f"Predicted Activity: {prediction}")  # For console output
 
     def handle_ble_data(self, data):
         current_time = time.time()
@@ -307,6 +278,25 @@ class AstronautMonitor(QMainWindow):
                         self.pressure.append(sensor_data["hPa"])
                     elif sensor_name == "MAX_SP02 Sensor" and "SPO2" in sensor_data:
                         self.pressure.append(sensor_data["SPO2"])
+                        
+            if self.pulse and self.resp and self.obj_temp:
+                avg_bpm = self.resp[-1]
+                body_temp = self.obj_temp[-1]
+
+                # Create the feature vector for the model.
+                X_new = np.array([[avg_bpm, body_temp]])
+                # Apply the same scaling used during training.
+                X_new_scaled = self.scaler.transform(X_new)
+
+                # Use the model to predict the activity.
+                prediction = self.model.predict(X_new_scaled)
+                predicted_index = np.argmax(prediction, axis=1)[0]
+                predicted_label = self.encoder.categories_[0][predicted_index]
+
+                # Update the UI with the prediction.
+                self.update_prediction_display(predicted_label)
+            else:
+                print("Not enough sensor data for prediction yet.")
 
         except Exception as e:
             logging.error(f"Error processing BLE data: {e}")

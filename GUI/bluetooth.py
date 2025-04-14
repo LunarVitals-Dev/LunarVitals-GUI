@@ -1,64 +1,84 @@
 import asyncio
+import re
+import json
+import logging
+from PySide6.QtCore import QThread, Signal
 from bleak import BleakClient
 
-# Replace with your device's MAC address
-NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"  # Replace with your device's MAC address
+class NordicBLEWorker(QThread):
+    data_received = Signal(dict)
+     
+    def __init__(self, mac_address, rx_uuid):
+        super().__init__()
+        self.mac_address = mac_address
+        self.rx_uuid = rx_uuid
+        self.running = True
+        self.received_data = ""
+        self._client = None
+        self._stop_event = asyncio.Event()
 
-# Define the characteristic UUIDs for UART TX and RX (128-bit UUIDs)
-UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"  # Updated to match the correct UART RX UUID
-UART_TX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # Updated to match the correct UART TX UUID
-
-async def send_data_to_nordic(client, data):
-    """Write data to the Nordic device's UART TX characteristic."""
-    try:
-        # Find the characteristic with the UART_TX_UUID and write data to it
-        for service in client.services:
-            for characteristic in service.characteristics:
-                if characteristic.uuid == UART_TX_UUID:
-                    await client.write_gatt_char(characteristic, data.encode())  # Send data as bytes
-                    print(f"Sent: {data}")
-                    return
-        print("UART TX characteristic not found!")
-    except Exception as e:
-        print(f"Error sending data: {e}")
-
-async def on_uart_rx_data(sender: int, data: bytearray):
-    """Callback function to handle incoming data from the Nordic device."""
-    print(f"Received from Nordic: {data.decode('utf-8', errors='ignore')}")
-
-async def discover_services_and_send_data():
-    async with BleakClient(NORDIC_DEVICE_MAC) as client:
-        print(f"Connected: {client.is_connected}")
-        services = client.services  # Access the services of the connected device
-        for service in services:
-            print(f"Service UUID: {service.uuid}")
-            for characteristic in service.characteristics:
-                print(f"  Characteristic UUID: {characteristic.uuid}")
-                if characteristic.uuid == UART_TX_UUID:
-                    print("Found UART TX characteristic")
-                elif characteristic.uuid == UART_RX_UUID:
-                    print("Found UART RX characteristic")
-                    # Subscribe to notifications for incoming data on UART RX
-                    await client.start_notify(characteristic, on_uart_rx_data)
-
-        # Keep the connection open and send data from terminal
+    async def connect_and_listen(self):
         try:
-            while True:
-                # Wait for user input
-                user_input = input("Enter message to send to Nordic: ")
-                if user_input.lower() == "exit":
-                    print("Exiting...")
-                    break
-                await send_data_to_nordic(client, user_input)
-                await asyncio.sleep(1)  # Sleep to prevent blocking the event loop
-        except KeyboardInterrupt:
-            print("Disconnected by user.")
-        finally:
-            # Ensure notifications are stopped when disconnecting
-            for service in client.services:
-                for characteristic in service.characteristics:
-                    if characteristic.uuid == UART_RX_UUID:
-                        await client.stop_notify(characteristic)
+            async with BleakClient(self.mac_address) as client:
+                self._client = client
+                logging.info(f"Connected to Nordic BLE Device: {self.mac_address}")
 
-if __name__ == "__main__":
-    asyncio.run(discover_services_and_send_data())
+                # Callback to be called when data is received from the BLE device.
+                def callback(sender, data):
+                    try:
+                        message = data.decode('utf-8')
+                        self.received_data += message
+                        self.process_received_data()
+                    except Exception as e:
+                        logging.error(f"Error in BLE callback: {e}")
+
+                await client.start_notify(self.rx_uuid, callback)
+
+                # Listen for data until stopped.
+                while self.running:
+                    await asyncio.sleep(0.1)
+                    if self._stop_event.is_set():
+                        break
+
+                await client.stop_notify(self.rx_uuid)
+        except Exception as e:
+            logging.error(f"BLE connection error: {e}")
+        finally:
+            self._client = None
+
+    def process_received_data(self):
+        # Use regex to extract complete JSON arrays.
+        json_pattern = r'\[.*?\]'
+        json_objects = re.findall(json_pattern, self.received_data)
+        # Remove processed data.
+        self.received_data = self.received_data[len("".join(json_objects)):]
+        for json_str in json_objects:
+            try:
+                # Strip the square brackets and parse the JSON.
+                data = json.loads(json_str[1:-1])
+                self.data_received.emit(data)
+            except json.JSONDecodeError as e:
+                logging.error(f"JSON Decode Error: {e}. Problematic JSON String: {json_str}")
+            except Exception as e:
+                logging.error(f"Error processing JSON: {e}")
+
+    def run(self):
+        # Run the asyncio event loop in this thread.
+        asyncio.run(self.connect_and_listen())
+
+    def stop(self):
+        self.running = False
+        if self._client:
+            self._stop_event.set()
+        self.quit()
+
+    def reset_connection(self):
+        """Reset the Bluetooth connection."""
+        if self._client:
+            try:
+                asyncio.run(self._client.disconnect())
+                logging.info("Disconnected from BLE device.")
+            except Exception as e:
+                logging.error(f"Error disconnecting from BLE device: {e}")
+        self._stop_event.clear()
+        asyncio.run(self.connect_and_listen())

@@ -8,3 +8,8 @@ pyassimp
 pyqtgraph
 python-dotenv
 bleak
+pandas
+tensorflow
+scikit-learn
+python-dateutil
+joblib
