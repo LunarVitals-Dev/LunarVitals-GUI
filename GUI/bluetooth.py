@@ -22,19 +22,46 @@ class NordicBLEWorker(QThread):
             async with BleakClient(self.mac_address) as client:
                 self._client = client
                 logging.info(f"Connected to Nordic BLE Device: {self.mac_address}")
+                
+                # Query GATT services and the target characteristic.
+                services = await client.get_services()
+                char = services.get_characteristic(self.rx_uuid)
+                if char:
+                    logging.debug(f"Characteristic Properties: {char.properties}")
+                else:
+                    logging.warning(f"Characteristic {self.rx_uuid} not found!")
 
-                # Callback to be called when data is received from the BLE device.
+                # Define the callback for received BLE notifications.
                 def callback(sender, data):
                     try:
-                        message = data.decode('utf-8')
-                        self.received_data += message
+                        # Try UTF-8 first.
+                        try:
+                            decoded_message = data.decode('utf-8')
+                        except UnicodeDecodeError:
+                            logging.info("UTF-8 decoding failed. Trying Latin-1.")
+                            try:
+                                decoded_message = data.decode('latin-1')
+                            except UnicodeDecodeError:
+                                logging.info("Latin-1 decoding failed. Trying ASCII.")
+                                try:
+                                    decoded_message = data.decode('ascii')
+                                except UnicodeDecodeError:
+                                    logging.info("ASCII decoding failed. Using hex representation.")
+                                    decoded_message = data.hex()
+
+                        # Optionally, print or log the decoded message.
+                        logging.debug(f"Notification received from {sender}: {decoded_message}")
+
+                        # Append decoded text to the running data buffer.
+                        self.received_data += decoded_message
                         self.process_received_data()
                     except Exception as e:
                         logging.error(f"Error in BLE callback: {e}")
 
+                # Start notifications on the selected GATT characteristic.
                 await client.start_notify(self.rx_uuid, callback)
 
-                # Listen for data until stopped.
+                # Continue processing notifications until a stop event is set.
                 while self.running:
                     await asyncio.sleep(0.1)
                     if self._stop_event.is_set():
@@ -47,14 +74,20 @@ class NordicBLEWorker(QThread):
             self._client = None
 
     def process_received_data(self):
-        # Use regex to extract complete JSON arrays.
+        """
+        Use regex to extract complete JSON arrays from the accumulated data.
+        Each JSON array should appear within square brackets (e.g. [ ... ]).
+        After processing, the extracted data is removed from the buffer.
+        """
         json_pattern = r'\[.*?\]'
         json_objects = re.findall(json_pattern, self.received_data)
-        # Remove processed data.
-        self.received_data = self.received_data[len("".join(json_objects)):]
+        if json_objects:
+            # Remove the processed portion from the beginning of the received_data.
+            processed_length = sum(len(obj) for obj in json_objects)
+            self.received_data = self.received_data[processed_length:]
         for json_str in json_objects:
             try:
-                # Strip the square brackets and parse the JSON.
+                # Remove the square brackets and parse the JSON.
                 data = json.loads(json_str[1:-1])
                 self.data_received.emit(data)
             except json.JSONDecodeError as e:

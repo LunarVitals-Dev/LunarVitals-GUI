@@ -6,14 +6,11 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject
 from PySide6.QtGui import QPixmap, QFontDatabase, QFont, QIntValidator
-from bleak import BleakClient
 from pymongo import MongoClient
 import time
 from dotenv import load_dotenv
 import pyqtgraph as pg
 from collections import deque
-import asyncio
-import json
 import sys
 import os
 import numpy as np
@@ -23,7 +20,6 @@ import re
 import joblib
 import numpy as np
 import tensorflow as tf
-import random
 from tensorflow.keras import layers
 from bluetooth import NordicBLEWorker
 
@@ -126,8 +122,8 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "F7:98:E4:81:FC:48"
-    UART_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+    NORDIC_DEVICE_MAC = "CF:8C:8F:A7:C4:A4"
+    GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
     def __init__(self, name, gender, age):
@@ -198,7 +194,7 @@ class AstronautMonitor(QMainWindow):
          
     def setup_ble_worker(self):
         # Instantiate the BLE worker with your device's MAC address and the RX characteristic UUID.
-        self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
+        self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
         # Connect the data_received signal from BLE worker to your BLE data handler.
         self.ble_worker.data_received.connect(self.handle_ble_data)
         self.ble_worker.start()
@@ -672,7 +668,7 @@ class AstronautMonitor(QMainWindow):
             self.worker.reset_connection()  # Reset the connection within the thread
         else:
             logging.warning("BLE worker is not running. Starting a new connection...")
-            self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.UART_RX_UUID)
+            self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
             self.worker.data_received.connect(self.handle_ble_data)
             self.worker.start()
 
