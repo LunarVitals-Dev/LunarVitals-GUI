@@ -641,7 +641,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    with open('stylesheet.qss', 'r') as file:
+    with open("stylesheet.qss", 'r') as file:
         app.setStyleSheet(file.read())
 
     window = MainWindow()
