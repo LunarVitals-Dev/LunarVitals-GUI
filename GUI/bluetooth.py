@@ -12,18 +12,17 @@ class NordicBLEWorker(QThread):
         super().__init__()
         self.mac_address = mac_address
         self.rx_uuid = rx_uuid
-        self.running = True
         self.received_data = ""
-        self._client = None
-        self._stop_event = asyncio.Event()
+        self.client = None
+        self.stop_requested = False
 
     async def connect_and_listen(self):
         try:
             async with BleakClient(self.mac_address) as client:
-                self._client = client
+                self.client = client
                 logging.info(f"Connected to Nordic BLE Device: {self.mac_address}")
                 
-                # Query GATT services and the target characteristic.
+                # Optionally, read the services and log the characteristic properties.
                 services = await client.get_services()
                 char = services.get_characteristic(self.rx_uuid)
                 if char:
@@ -31,87 +30,102 @@ class NordicBLEWorker(QThread):
                 else:
                     logging.warning(f"Characteristic {self.rx_uuid} not found!")
 
-                # Define the callback for received BLE notifications.
-                def callback(sender, data):
+                # Loop: continuously read the GATT characteristic.
+                while not self.stop_requested:
                     try:
-                        # Try UTF-8 first.
+                        response = await client.read_gatt_char(self.rx_uuid)
+                        logging.debug(f"Raw Data received: {response}")
+                        decoded_message = None
+
+                        # Try decoding in UTF-8, fallback to Latin-1, ASCII, and finally hex.
                         try:
-                            decoded_message = data.decode('utf-8')
+                            decoded_message = response.decode('utf-8')
                         except UnicodeDecodeError:
                             logging.info("UTF-8 decoding failed. Trying Latin-1.")
                             try:
-                                decoded_message = data.decode('latin-1')
+                                decoded_message = response.decode('latin-1')
                             except UnicodeDecodeError:
                                 logging.info("Latin-1 decoding failed. Trying ASCII.")
                                 try:
-                                    decoded_message = data.decode('ascii')
+                                    decoded_message = response.decode('ascii')
                                 except UnicodeDecodeError:
                                     logging.info("ASCII decoding failed. Using hex representation.")
-                                    decoded_message = data.hex()
+                                    decoded_message = response.hex()
 
-                        # Optionally, print or log the decoded message.
-                        logging.debug(f"Notification received from {sender}: {decoded_message}")
+                        logging.debug(f"Decoded Data: {decoded_message}")
 
-                        # Append decoded text to the running data buffer.
+                        # Append decoded message to the buffer and process it.
                         self.received_data += decoded_message
                         self.process_received_data()
+                        
                     except Exception as e:
-                        logging.error(f"Error in BLE callback: {e}")
+                        logging.error(f"Error during read: {e}")
+                    
+                    await asyncio.sleep(0.2)
 
-                # Start notifications on the selected GATT characteristic.
-                await client.start_notify(self.rx_uuid, callback)
-
-                # Continue processing notifications until a stop event is set.
-                while self.running:
-                    await asyncio.sleep(0.1)
-                    if self._stop_event.is_set():
-                        break
-
-                await client.stop_notify(self.rx_uuid)
         except Exception as e:
             logging.error(f"BLE connection error: {e}")
         finally:
-            self._client = None
+            self.client = None
 
     def process_received_data(self):
         """
-        Use regex to extract complete JSON arrays from the accumulated data.
-        Each JSON array should appear within square brackets (e.g. [ ... ]).
-        After processing, the extracted data is removed from the buffer.
+        Extract complete JSON arrays (assumed to be wrapped in square brackets)
+        from the accumulated data and then emit them via the data_received signal.
+        Processed text is removed from the buffer up to the end of the last complete match.
         """
+
+        # This pattern is non-greedy so it should capture each JSON array separately.
         json_pattern = r'\[.*?\]'
-        json_objects = re.findall(json_pattern, self.received_data)
-        if json_objects:
-            # Remove the processed portion from the beginning of the received_data.
-            processed_length = sum(len(obj) for obj in json_objects)
-            self.received_data = self.received_data[processed_length:]
-        for json_str in json_objects:
-            try:
-                # Remove the square brackets and parse the JSON.
-                data = json.loads(json_str[1:-1])
-                self.data_received.emit(data)
-            except json.JSONDecodeError as e:
-                logging.error(f"JSON Decode Error: {e}. Problematic JSON String: {json_str}")
-            except Exception as e:
-                logging.error(f"Error processing JSON: {e}")
+        
+        # Use finditer to get match objects, including their start and end positions.
+        matches = list(re.finditer(json_pattern, self.received_data))
+        
+        if matches:
+            # The end index of the last match tells us how much of the buffer was processed.
+            last_index = matches[-1].end()
+            # Extract all found JSON array strings.
+            json_objects = [m.group() for m in matches]
+            # Remove the processed portion from the buffer.
+            self.received_data = self.received_data[last_index:]
+        
+            # Process each JSON array found.
+            for json_str in json_objects:
+                try:
+                    # Parse the JSON array, which should return a list of sensor objects.
+                    data_list = json.loads(json_str)
+                    
+                    # If the parsed object is a list, emit each sensor's data individually.
+                    if isinstance(data_list, list):
+                        for sensor_data in data_list:
+                            self.data_received.emit(sensor_data)
+                    else:
+                        self.data_received.emit(data_list)
+                except json.JSONDecodeError as e:
+                    logging.error(f"JSON Decode Error: {e}. Problematic JSON string: {json_str}")
+                except Exception as e:
+                    logging.error(f"Error processing JSON: {e}")
 
     def run(self):
         # Run the asyncio event loop in this thread.
         asyncio.run(self.connect_and_listen())
 
     def stop(self):
-        self.running = False
-        if self._client:
-            self._stop_event.set()
+        # Signal the loop to exit.
+        self.stop_requested = True
         self.quit()
+        self.wait()
 
-    def reset_connection(self):
-        """Reset the Bluetooth connection."""
-        if self._client:
-            try:
-                asyncio.run(self._client.disconnect())
-                logging.info("Disconnected from BLE device.")
-            except Exception as e:
-                logging.error(f"Error disconnecting from BLE device: {e}")
-        self._stop_event.clear()
-        asyncio.run(self.connect_and_listen())
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.DEBUG)
+
+    mac_address = "C0:0F:DD:31:AC:91"  
+    rx_uuid = "00002A3D-0000-1000-8000-00805F9B34FB"
+
+    worker = NordicBLEWorker(mac_address, rx_uuid)
+    
+    try:
+        asyncio.run(worker.connect_and_listen())
+    except KeyboardInterrupt:
+        logging.info("Keyboard interrupt received. Stopping BLE worker.")
+        worker.stop()

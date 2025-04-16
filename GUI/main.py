@@ -16,6 +16,8 @@ import os
 import numpy as np
 import logging
 import re  
+
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
   
 import joblib
 import numpy as np
@@ -122,7 +124,8 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "CF:8C:8F:A7:C4:A4"
+    #NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" Main prototype
+    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" 
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -209,7 +212,7 @@ class AstronautMonitor(QMainWindow):
             self.custom_font = None
 
     def init_data_buffers(self):
-        self.maxlen = 100
+        self.maxlen = 10
         self.pulse = deque(maxlen=self.maxlen)
         self.resp = deque(maxlen=self.maxlen)
         self.accel_x = deque(maxlen=self.maxlen)
@@ -221,7 +224,6 @@ class AstronautMonitor(QMainWindow):
         self.obj_temp = deque(maxlen=self.maxlen)
         self.amb_temp = deque(maxlen=self.maxlen)
         self.pressure = deque(maxlen=self.maxlen)
-        self.SPO2 = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
 
     def send_to_mongo(self, sensor_data):
@@ -244,55 +246,82 @@ class AstronautMonitor(QMainWindow):
         print(f"Predicted Activity: {prediction}")  # For console output
 
     def handle_ble_data(self, data):
-        current_time = time.time()
-
         try:
+            # If data is a list, merge it into a single dictionary.
+            if isinstance(data, list):
+                merged_data = {}
+                for sensor_obj in data:
+                    # Merge each sensor data object. If a sensor appears twice, the last one wins.
+                    merged_data.update(sensor_obj)
+                data = merged_data
+
+            # Send data to MongoDB and save it locally.
             self.send_to_mongo(data)
-
             self.latest_data = data
+            
+            # print(data)
 
+            # Process each sensor's data.
             for sensor_name, sensor_data in data.items():
                 if isinstance(sensor_data, dict):
                     if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
-                        self.pulse.append(sensor_data["Value_mV"])
-                        self.timestamps.append(current_time)
+                        value = sensor_data["Value_mV"]
+                        self.pulse.append(value)
+                        self.timestamps.append(time.time())
+                        # print(f"[PulseSensor] Appended Value_mV: {value} (Total Count: {len(self.pulse)})")
                     elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
-                        self.resp.append(sensor_data["avg_mV"])
+                        value = sensor_data["avg_mV"]
+                        self.resp.append(value)
+                        # print(f"[RespiratoryRate] Appended avg_mV: {value} (Total Count: {len(self.resp)})")
                     elif sensor_name == "MPU_Accelerometer":
-                        self.accel_x.append(sensor_data.get("X_g", 0))
-                        self.accel_y.append(sensor_data.get("Y_g", 0))
-                        self.accel_z.append(sensor_data.get("Z_g", 0))
+                        x = sensor_data.get("X_g", 0)
+                        y = sensor_data.get("Y_g", 0)
+                        z = sensor_data.get("Z_g", 0)
+                        self.accel_x.append(x)
+                        self.accel_y.append(y)
+                        self.accel_z.append(z)
+                        # print(f"[MPU_Accelerometer] Appended X_g: {x}, Y_g: {y}, Z_g: {z} (Total Count: {len(self.accel_x)})")
                     elif sensor_name == "MPU_Gyroscope":
-                        self.gyro_x.append(sensor_data.get("X_deg_per_s", 0))
-                        self.gyro_y.append(sensor_data.get("Y_deg_per_s", 0))
-                        self.gyro_z.append(sensor_data.get("Z_deg_per_s", 0))
+                        x = sensor_data.get("X_deg_per_s", 0)
+                        y = sensor_data.get("Y_deg_per_s", 0)
+                        z = sensor_data.get("Z_deg_per_s", 0)
+                        self.gyro_x.append(x)
+                        self.gyro_y.append(y)
+                        self.gyro_z.append(z)
+                        # print(f"[MPU_Gyroscope] Appended X_deg_per_s: {x}, Y_deg_per_s: {y}, Z_deg_per_s: {z} (Total Count: {len(self.gyro_x)})")
                     elif sensor_name == "MLX_ObjectTemperature" and "Celsius" in sensor_data:
-                        self.obj_temp.append(sensor_data["Celsius"])
+                        value = sensor_data["Celsius"]
+                        self.obj_temp.append(value)
+                        # print(f"[MLX_ObjectTemperature] Appended Celsius: {value} (Total Count: {len(self.obj_temp)})")
                     elif sensor_name == "MLX_AmbientTemperature" and "Celsius" in sensor_data:
-                        self.amb_temp.append(sensor_data["Celsius"])
+                        value = sensor_data["Celsius"]
+                        self.amb_temp.append(value)
+                        # print(f"[MLX_AmbientTemperature] Appended Celsius: {value} (Total Count: {len(self.amb_temp)})")
                     elif sensor_name == "BMP_Pressure" and "hPa" in sensor_data:
-                        self.pressure.append(sensor_data["hPa"])
-                    elif sensor_name == "MAX_SP02 Sensor" and "SPO2" in sensor_data:
-                        self.pressure.append(sensor_data["SPO2"])
-                        
-            if self.pulse and self.resp and self.obj_temp:
-                avg_bpm = self.resp[-1]
-                body_temp = self.obj_temp[-1]
+                        value = sensor_data["hPa"]
+                        self.pressure.append(value)
+                        # print(f"[BMP_Pressure] Appended hPa: {value} (Total Count: {len(self.pressure)})")
 
-                # Create the feature vector for the model.
-                X_new = np.array([[avg_bpm, body_temp]])
-                # Apply the same scaling used during training.
-                X_new_scaled = self.scaler.transform(X_new)
+                # Check if enough sensor data is present for ML prediction.
+                if self.pulse and self.resp and self.obj_temp:
+                    # Here we use the latest value from each sensor.
+                    avg_bpm = self.resp[-1]
+                    body_temp = self.obj_temp[-1]
 
-                # Use the model to predict the activity.
-                prediction = self.model.predict(X_new_scaled)
-                predicted_index = np.argmax(prediction, axis=1)[0]
-                predicted_label = self.encoder.categories_[0][predicted_index]
+                    # Create the feature vector for the model.
+                    X_new = np.array([[avg_bpm, body_temp]])
+                    # Apply scaling as per the model’s training.
+                    X_new_scaled = self.scaler.transform(X_new)
 
-                # Update the UI with the prediction.
-                self.update_prediction_display(predicted_label)
-            else:
-                print("Not enough sensor data for prediction yet.")
+                    # Use the model to predict the activity.
+                    prediction = self.model.predict(X_new_scaled)
+                    predicted_index = np.argmax(prediction, axis=1)[0]
+                    predicted_label = self.encoder.categories_[0][predicted_index]
+
+                    # Update the UI with the prediction.
+                    self.update_prediction_display(predicted_label)
+                else:
+                    print("Not enough sensor data for prediction yet.")
 
         except Exception as e:
             logging.error(f"Error processing BLE data: {e}")
@@ -325,21 +354,19 @@ class AstronautMonitor(QMainWindow):
 
         box_layout = QVBoxLayout()
         
-        # Only add a title if it is not the blood oxygen sensor.
-        if sensor_name != "MAX_SPO2 Sensor":
-            title_button = QPushButton(config['display_name'])
-            if self.custom_font:
-                title_button.setFont(self.custom_font)
-            title_button.setProperty("class", "sensor-title-button")
-            
-            # Get the chart type (if any) for routing.
-            chart_type = self.sensor_to_chart_type.get(sensor_name)
-            if chart_type:
-                # Use a helper to capture chart_type for this sensor.
-                def make_callback(chart_type_value):
-                    return lambda checked: self.switch_to_chart(chart_type_value)
-                title_button.clicked.connect(make_callback(chart_type))
-            box_layout.addWidget(title_button)
+        title_button = QPushButton(config['display_name'])
+        if self.custom_font:
+            title_button.setFont(self.custom_font)
+        title_button.setProperty("class", "sensor-title-button")
+        
+        # Get the chart type (if any) for routing.
+        chart_type = self.sensor_to_chart_type.get(sensor_name)
+        if chart_type:
+            # Use a helper to capture chart_type for this sensor.
+            def make_callback(chart_type_value):
+                return lambda checked: self.switch_to_chart(chart_type_value)
+            title_button.clicked.connect(make_callback(chart_type))
+        box_layout.addWidget(title_button)
         
         # Create measurement label(s). For Blood Oxygen, it will be the only widget.
         self.data_labels[sensor_name] = {}
@@ -392,11 +419,6 @@ class AstronautMonitor(QMainWindow):
                 "measurements": {"hPa": "Pressure (hPa)"},
                 "grid_position": (2, 2)
             },
-            "MAX_SPO2 Sensor": {
-                "display_name": "Blood Oxygen Monitor",
-                "measurements": {"SPO2": "Blood Oxygen Level"},
-                "grid_position": (3, 2)
-            }
         }
         
         # Maps sensor_name to chart type string for update_chart
@@ -447,26 +469,11 @@ class AstronautMonitor(QMainWindow):
                             if key in config['measurements']),
                             key
                         )
-                        # Special handling for blood oxygen sensor (SPO2)
-                        if sensor_name == "MAX_SPO2 Sensor" and key == "SPO2":
-                            # Convert percentage to status message and assign color
-                            if value >= 95:
-                                level = "Normal"
-                                color = "green"
-                            elif value >= 90:
-                                level = "Warning"
-                                color = "orange"
-                            else:
-                                level = "Critical"
-                                color = "red"
-                            # Set the label text with HTML styling
-                            self.data_labels[sensor_name][key].setText(
-                                f'<span style="color:{color}">{display_name}: {level}</span>'
-                            )
-                        else:
+                        if key in self.data_labels[sensor_name]:
                             self.data_labels[sensor_name][key].setText(f"{display_name}: {value:.2f}")
+                        else:
+                            continue
 
-                            
     def set_current_activity(self, activity):
         # Uncheck all buttons
         for button in self.activity_buttons.values():
@@ -544,7 +551,7 @@ class AstronautMonitor(QMainWindow):
         about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(about_label)
 
-        about_text = QLabel("Lunar extravehicular activities (EVAs) are long missions that require astronauts to perform various tasks under extreme conditions with limited consumables. To combat the safety risk of over-depleting critical resources, we created a wearable biomonitoring system that measures, analyzes, and predicts physiological signals: including heart rate, blood oxygen saturation, respiration rate, body temperature, and step count. These signals are collected by a suite of sensors, which collects the data, filters it, and transmits it via Bluetooth to a database, where it is displayed here. Our solution aims to improve mission safety and efficiency and serve as a foundation for support in human space exploration.")
+        about_text = QLabel("Lunar extravehicular activities (EVAs) are long missions that require astronauts to perform various tasks under extreme conditions with limited consumables. To combat the safety risk of over-depleting critical resources, we created a wearable biomonitoring system that measures, analyzes, and predicts physiological signals: including heart rate, respiration rate, body temperature, and step count. These signals are collected by a suite of sensors, which collects the data, filters it, and transmits it via Bluetooth to a database, where it is displayed here. Our solution aims to improve mission safety and efficiency and serve as a foundation for support in human space exploration.")
         about_text.setObjectName("aboutText")
         about_text.setWordWrap(True)  # Enable word wrapping
         layout.addWidget(about_text)
@@ -663,14 +670,15 @@ class AstronautMonitor(QMainWindow):
                 
     def refresh_monitoring_page(self):
         """Refresh the monitoring page by resetting the Bluetooth connection."""
-        if self.worker and self.worker.isRunning():
-            logging.info("Resetting Bluetooth connection...")
-            self.worker.reset_connection()  # Reset the connection within the thread
-        else:
-            logging.warning("BLE worker is not running. Starting a new connection...")
-            self.worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
-            self.worker.data_received.connect(self.handle_ble_data)
-            self.worker.start()
+        logging.info("Resetting Bluetooth connection...")
+        if self.ble_worker and self.ble_worker.isRunning():
+            # Stop the running worker gracefully.
+            self.ble_worker.stop()
+            self.ble_worker.wait()  # Ensure the thread fully terminates.
+        # Create a new worker instance.
+        self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
+        self.ble_worker.data_received.connect(self.handle_ble_data)
+        self.ble_worker.start()
 
         # Optionally, clear the chart and reset buffers
         self.init_data_buffers()
@@ -734,7 +742,7 @@ class AstronautMonitor(QMainWindow):
         self.addToolBar(navbar)
 
     def closeEvent(self, event):
-        self.worker.stop()
+        self.ble_worker.stop()
         self.update_timer.stop()
         event.accept()
 
