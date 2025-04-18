@@ -7,11 +7,13 @@ from bleak import BleakClient
 
 class NordicBLEWorker(QThread):
     data_received = Signal(dict)
-     
-    def __init__(self, mac_address, rx_uuid):
+
+    def __init__(self, mac_address: str, rx_uuid: str):
         super().__init__()
         self.mac_address = mac_address
         self.rx_uuid = rx_uuid
+
+        # buffer for partial text
         self.received_data = ""
         self.client = None
         self.stop_requested = False
@@ -20,53 +22,49 @@ class NordicBLEWorker(QThread):
         try:
             async with BleakClient(self.mac_address) as client:
                 self.client = client
-                logging.info(f"Connected to Nordic BLE Device: {self.mac_address}")
+                logging.info(f"Connected to Nordic BLE Device {self.mac_address}")
                 
-                # Optionally, read the services and log the characteristic properties.
                 services = await client.get_services()
-                char = services.get_characteristic(self.rx_uuid)
-                if char:
-                    logging.debug(f"Characteristic Properties: {char.properties}")
-                else:
-                    logging.warning(f"Characteristic {self.rx_uuid} not found!")
+                # for svc in services:
+                #     for ch in svc.characteristics:
+                #         print(f"Char {ch.uuid!r}: props={ch.properties}")
 
-                # Loop: continuously read the GATT characteristic.
+                # Read‑loop
                 while not self.stop_requested:
                     try:
-                        response = await client.read_gatt_char(self.rx_uuid)
-                        logging.debug(f"Raw Data received: {response}")
-                        decoded_message = None
+                        raw = await client.read_gatt_char(self.rx_uuid)
+                        logging.debug(f"Raw chunk: {raw!r}")
 
-                        # Try decoding in UTF-8, fallback to Latin-1, ASCII, and finally hex.
-                        try:
-                            decoded_message = response.decode('utf-8')
-                        except UnicodeDecodeError:
-                            logging.info("UTF-8 decoding failed. Trying Latin-1.")
+                        # Try common decodings
+                        for codec in ('utf-8','latin-1','ascii'):
                             try:
-                                decoded_message = response.decode('latin-1')
+                                decoded = raw.decode(codec)
+                                break
                             except UnicodeDecodeError:
-                                logging.info("Latin-1 decoding failed. Trying ASCII.")
-                                try:
-                                    decoded_message = response.decode('ascii')
-                                except UnicodeDecodeError:
-                                    logging.info("ASCII decoding failed. Using hex representation.")
-                                    decoded_message = response.hex()
+                                decoded = None
 
-                        logging.debug(f"Decoded Data: {decoded_message}")
+                        if not decoded:
+                            logging.warning("Discarding undecodable BLE chunk")
+                            await asyncio.sleep(0.1)
+                            continue
 
-                        # Append decoded message to the buffer and process it.
-                        self.received_data += decoded_message
+                        #print(f"Got text fragment: {decoded!r}")
+                        self.received_data += decoded
+
+                        # Try to pull out any full JSON payloads
                         self.process_received_data()
-                        
+
                     except Exception as e:
                         logging.error(f"Error during read: {e}")
-                    
-                    await asyncio.sleep(0.2)
+
+                    await asyncio.sleep(0.1)
 
         except Exception as e:
             logging.error(f"BLE connection error: {e}")
+
         finally:
             self.client = None
+            logging.info("Disconnected BLE client")
 
     def process_received_data(self):
         """
@@ -102,30 +100,29 @@ class NordicBLEWorker(QThread):
                     else:
                         self.data_received.emit(data_list)
                 except json.JSONDecodeError as e:
-                    logging.error(f"JSON Decode Error: {e}. Problematic JSON string: {json_str}")
+                    logging.error(f"JSON Decode Error: {e}")
                 except Exception as e:
                     logging.error(f"Error processing JSON: {e}")
 
     def run(self):
-        # Run the asyncio event loop in this thread.
         asyncio.run(self.connect_and_listen())
 
     def stop(self):
-        # Signal the loop to exit.
         self.stop_requested = True
         self.quit()
         self.wait()
 
-if __name__ == '__main__':
-    logging.basicConfig(level=logging.DEBUG)
 
-    mac_address = "C0:0F:DD:31:AC:91"  
-    rx_uuid = "00002A3D-0000-1000-8000-00805F9B34FB"
+# if __name__ == '__main__':
+#     logging.basicConfig(level=logging.DEBUG)
 
-    worker = NordicBLEWorker(mac_address, rx_uuid)
+#     mac_address = "C0:0F:DD:31:AC:91"  
+#     rx_uuid = "00002A3D-0000-1000-8000-00805F9B34FB"
+
+#     worker = NordicBLEWorker(mac_address, rx_uuid)
     
-    try:
-        asyncio.run(worker.connect_and_listen())
-    except KeyboardInterrupt:
-        logging.info("Keyboard interrupt received. Stopping BLE worker.")
-        worker.stop()
+#     try:
+#         asyncio.run(worker.connect_and_listen())
+#     except KeyboardInterrupt:
+#         logging.info("Keyboard interrupt received. Stopping BLE worker.")
+#         worker.stop()

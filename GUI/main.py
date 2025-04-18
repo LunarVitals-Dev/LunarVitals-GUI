@@ -124,8 +124,8 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    #NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" Main prototype
-    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" 
+    NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
+    #NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -177,12 +177,14 @@ class AstronautMonitor(QMainWindow):
         self.initUI()
 
         self.mongo_buffer = []
+        
+        self.last_prediction = 0.0
 
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.flush_mongo_buffer)
         self.update_timer.timeout.connect(self.update_home_page)
         self.update_timer.timeout.connect(self.update_current_chart)
-        self.update_timer.start(100)
+        self.update_timer.start(1000)
 
         self.current_chart_type = None
 
@@ -212,7 +214,7 @@ class AstronautMonitor(QMainWindow):
             self.custom_font = None
 
     def init_data_buffers(self):
-        self.maxlen = 10
+        self.maxlen = 100
         self.pulse = deque(maxlen=self.maxlen)
         self.resp = deque(maxlen=self.maxlen)
         self.accel_x = deque(maxlen=self.maxlen)
@@ -242,22 +244,52 @@ class AstronautMonitor(QMainWindow):
                 
     def update_prediction_display(self, prediction):
         """Update the UI with the predicted activity."""
-        self.label.setText(f"Predicted Activity: {prediction}")
-        print(f"Predicted Activity: {prediction}")  # For console output
+        # Console log
+        print(f"Predicted Activity: {prediction}")
+        # Update the on‐screen label
+        self.activity_label.setText(f"Current Activity: {prediction}")
+        
+    def on_new_sensor_data(self):
+        now = time.time()
+        # print(f"  pulse entries: {len(self.pulse)}")
+        # print(f"  temp entries:  {len(self.obj_temp)}")
+        # print(f"  seconds since last: {now - self.last_prediction:.1f}")
+
+        if self.pulse and self.obj_temp and (now - self.last_prediction) >= 10:
+            self.last_prediction = now
+
+            # compute the 10‑s averages
+            avg_bpm  = np.mean(self.pulse)
+            body_temp = np.mean(self.obj_temp)
+
+            # scale, predict, decode
+            X_new    = np.array([[avg_bpm, body_temp]])
+            X_scaled = self.scaler.transform(X_new)
+            probs    = self.model.predict(X_scaled)
+            idx      = np.argmax(probs, axis=1)[0]
+            label    = self.encoder.categories_[0][idx]
+
+            # update the UI
+            self.update_prediction_display(label)
 
     def handle_ble_data(self, data):
         try:
-            # If data is a list, merge it into a single dictionary.
+            # merge list → dict as you already do…
             if isinstance(data, list):
                 merged_data = {}
                 for sensor_obj in data:
-                    # Merge each sensor data object. If a sensor appears twice, the last one wins.
                     merged_data.update(sensor_obj)
                 data = merged_data
 
-            # Send data to MongoDB and save it locally.
+            # write to Mongo, etc.
             self.send_to_mongo(data)
-            self.latest_data = data
+
+            # initialize once
+            if not hasattr(self, 'latest_data'):
+                self.latest_data = {}
+
+            # update just the keys you got this time
+            self.latest_data.update(data)
             
             # print(data)
 
@@ -302,26 +334,7 @@ class AstronautMonitor(QMainWindow):
                         self.pressure.append(value)
                         # print(f"[BMP_Pressure] Appended hPa: {value} (Total Count: {len(self.pressure)})")
 
-                # Check if enough sensor data is present for ML prediction.
-                if self.pulse and self.resp and self.obj_temp:
-                    # Here we use the latest value from each sensor.
-                    avg_bpm = self.resp[-1]
-                    body_temp = self.obj_temp[-1]
-
-                    # Create the feature vector for the model.
-                    X_new = np.array([[avg_bpm, body_temp]])
-                    # Apply scaling as per the model’s training.
-                    X_new_scaled = self.scaler.transform(X_new)
-
-                    # Use the model to predict the activity.
-                    prediction = self.model.predict(X_new_scaled)
-                    predicted_index = np.argmax(prediction, axis=1)[0]
-                    predicted_label = self.encoder.categories_[0][predicted_index]
-
-                    # Update the UI with the prediction.
-                    self.update_prediction_display(predicted_label)
-                else:
-                    print("Not enough sensor data for prediction yet.")
+                self.on_new_sensor_data()
 
         except Exception as e:
             logging.error(f"Error processing BLE data: {e}")
@@ -446,6 +459,14 @@ class AstronautMonitor(QMainWindow):
 
         # Place image in center column spanning rows 1 to 3
         layout.addWidget(center_image, 1, 1, 3, 1, Qt.AlignCenter)
+        
+        # Create the “Current Activity” display label:
+        self.activity_label = QLabel("Current Activity: N/A")
+        self.activity_label.setObjectName("activityLabel")
+        self.activity_label.setAlignment(Qt.AlignCenter)
+
+        # Place it at row 3, column 2 in the grid:
+        layout.addWidget(self.activity_label, 3, 2)
 
         # Set column and row stretch for even spacing
         layout.setColumnStretch(0, 1)  # Left
@@ -459,20 +480,20 @@ class AstronautMonitor(QMainWindow):
 
 
     def update_home_page(self):
-        if hasattr(self, 'latest_data'):
-            for sensor_name, sensor_data in self.latest_data.items():
-                if isinstance(sensor_data, dict) and sensor_name in self.data_labels:
-                    for key, value in sensor_data.items():
-                        display_name = next(
-                            (config['measurements'][key] 
-                            for config in self.sensor_config.values() 
-                            if key in config['measurements']),
-                            key
-                        )
-                        if key in self.data_labels[sensor_name]:
-                            self.data_labels[sensor_name][key].setText(f"{display_name}: {value:.2f}")
-                        else:
-                            continue
+        # print(">>> latest_data keys:", list(self.latest_data.keys()))
+        if not hasattr(self, 'latest_data'):
+            return
+
+        for sensor_name, sensor_data in self.latest_data.items():
+            # skip anything that isn’t a dict or we don’t have labels for
+            if sensor_name not in self.data_labels or not isinstance(sensor_data, dict):
+                continue
+
+            # only loop over the keys that actually exist in self.data_labels
+            for key, label in self.data_labels[sensor_name].items():
+                if key in sensor_data:
+                    disp = self.sensor_config[sensor_name]['measurements'][key]
+                    label.setText(f"{disp}: {sensor_data[key]:.2f}")
 
     def set_current_activity(self, activity):
         # Uncheck all buttons

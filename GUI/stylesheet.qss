@@ -220,3 +220,11 @@ QGridLayout {
     background-color: #f5f7fa; /* Light gray background for the text area */
 }
 
+#activityLabel {
+    color: #062a61;           /* dark blue like your headers */
+    font-size: 20px;          /* bump the size if you like */
+    font-weight: bold;
+    background-color: transparent;
+    margin: 8px;
+}
+

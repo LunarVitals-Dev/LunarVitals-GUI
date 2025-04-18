@@ -61,17 +61,17 @@ def process_training_data(data):
     processed = []
     for key, record in grouped.items():
         # Check for the required sensor groups.
-        resp_data = record.get('RespiratoryRate')
+        pulse_data = record.get('PulseSensor')
         temp_data = record.get('MLX_ObjectTemperature')
-        if resp_data is None or temp_data is None:
+        if pulse_data is None or temp_data is None:
             # Skip this group if one of the sensors is missing.
             continue
         
-        brpm = resp_data.get('BRPM')
+        bpm = pulse_data.get('pulse_BPM')
         celsius = temp_data.get('Celsius')
-        if brpm is not None and celsius is not None:
+        if bpm is not None and celsius is not None:
             processed.append({
-                'avg_bpm': brpm,          # Using BRPM from RespiratoryRate.
+                'avg_bpm': bpm,          # Using pulse_BPM from PulseSensor.
                 'body_temp': celsius,      # Using Celsius from MLX_ObjectTemperature.
                 'activity_id': record.get('activity_id')
             })
@@ -126,7 +126,7 @@ def train_activity_model():
                   metrics=['accuracy'])
 
     print("Starting training...")
-    model.fit(X_train, y_train, epochs=20, batch_size=32, validation_split=0.2, verbose=1)
+    model.fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.2, verbose=1)
     loss, acc = model.evaluate(X_test, y_test, verbose=1)
     print(f"Test Loss: {loss:.4f}, Test Accuracy: {acc:.4f}")
 
