@@ -10,6 +10,7 @@ from pymongo import MongoClient
 import time
 from dotenv import load_dotenv
 import pyqtgraph as pg
+from pyqtgraph import PlotWidget, mkPen
 from collections import deque
 import sys
 import os
@@ -124,14 +125,13 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
-    #NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" Main prototype
+    #NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
+    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
     def __init__(self, name, gender, age):
         super().__init__()
-        self.load_custom_font()
         
         self.astronaut_name = name
         self.astronaut_gender = gender
@@ -203,15 +203,6 @@ class AstronautMonitor(QMainWindow):
         # Connect the data_received signal from BLE worker to your BLE data handler.
         self.ble_worker.data_received.connect(self.handle_ble_data)
         self.ble_worker.start()
-        
-    def load_custom_font(self):
-        self.custom_font_id = QFontDatabase.addApplicationFont("assets/MegatransdemoRegular-8M9B0.otf")
-        if self.custom_font_id != -1:
-            self.custom_font_family = QFontDatabase.applicationFontFamilies(self.custom_font_id)[0]
-            self.custom_font = QFont(self.custom_font_family)
-        else:
-            logging.error("Failed to load custom font")
-            self.custom_font = None
 
     def init_data_buffers(self):
         self.maxlen = 100
@@ -368,8 +359,6 @@ class AstronautMonitor(QMainWindow):
         box_layout = QVBoxLayout()
         
         title_button = QPushButton(config['display_name'])
-        if self.custom_font:
-            title_button.setFont(self.custom_font)
         title_button.setProperty("class", "sensor-title-button")
         
         # Get the chart type (if any) for routing.
@@ -385,8 +374,6 @@ class AstronautMonitor(QMainWindow):
         self.data_labels[sensor_name] = {}
         for key, display_name in config['measurements'].items():
             value_label = QLabel(f"{display_name}: N/A")
-            if self.custom_font:
-                value_label.setFont(self.custom_font)
             value_label.setProperty("class", "sensor-value")
             self.data_labels[sensor_name][key] = value_label
             box_layout.addWidget(value_label)
@@ -418,8 +405,9 @@ class AstronautMonitor(QMainWindow):
                 "grid_position": (2, 0)
             },
             "MPU_Accelerometer": {
-                "display_name": "Step Counter",
-                "measurements": {"steps": "Total Steps"},
+                "display_name": "Rate Of Steps",
+                #"measurements": {"steps": "Total Steps"},
+                "measurements": {"rate": "Step Rate"},
                 "grid_position": (3, 0)
             },
             "MLX_ObjectTemperature": {
@@ -452,7 +440,7 @@ class AstronautMonitor(QMainWindow):
         # Add astronaut image
         center_image = QLabel()
         center_image.setObjectName("centerImage")
-        center_image.setFixedSize(300, 500)  
+        center_image.setFixedSize(300, 510)  
         center_image.setScaledContents(True)
         pixmap = QPixmap('assets/spaceman.png')
         center_image.setPixmap(pixmap)
@@ -493,7 +481,7 @@ class AstronautMonitor(QMainWindow):
             for key, label in self.data_labels[sensor_name].items():
                 if key in sensor_data:
                     disp = self.sensor_config[sensor_name]['measurements'][key]
-                    label.setText(f"{disp}: {sensor_data[key]:.2f}")
+                    label.setText(f"{disp}: {sensor_data[key]}") 
 
     def set_current_activity(self, activity):
         # Uncheck all buttons
@@ -582,63 +570,109 @@ class AstronautMonitor(QMainWindow):
         self.about_page.setObjectName("aboutPage")
 
     def setup_chart(self, chart_widget, title):
-        chart_widget.setBackground('white')
-        chart_widget.setTitle(title, size=self.chart_style['title_size'], color=self.chart_style['title_color'])
-        chart_widget.showGrid(x=True, y=True, alpha=0.3)
-        chart_widget.getAxis('bottom').setPen(self.chart_style['axis_color'])
-        chart_widget.getAxis('left').setPen(self.chart_style['axis_color'])
+        # white background, black text
+        plot_item = chart_widget.getPlotItem()
+        chart_widget.setBackground('w')
+        plot_item.setTitle(title, **{
+            'size': self.chart_style['title_size'],
+            'color': self.chart_style['title_color']
+        })
+        plot_item.showGrid(x=True, y=True, alpha=0.3)
+
+        # axis styling
+        for axis in (plot_item.getAxis('bottom'), plot_item.getAxis('left')):
+            axis.setPen(self.chart_style['axis_color'])
+            axis.setTextPen(self.chart_style['axis_color'])
+            axis.setStyle(tickFont=QFont('Arial', 12))
+
+        # add a legend in the top‐right corner
+        self.legend = plot_item.addLegend(offset=(10,10))
         return chart_widget
 
     def update_chart(self, sensor_type):
         self.current_chart_type = sensor_type
+        self.chart_widget.setObjectName("chartWidget")
         self.chart_widget.clear()
 
+        # Determine title, axis labels, legend names, pens & symbols
         if sensor_type == 'pulse':
-            self.chart_widget.setTitle("Heart Rate")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Value", units='mV')
-            self.pulse_plot = self.chart_widget.plot(pen='r')
-            self.update_current_chart()
-
+            title, left, units = "Heart Rate", "Value", "mV"
+            names  = ['Heart Rate']
+            pens   = [mkPen(color=(255,  0,   0), width=2)]  # red
+            symbols= [None]
         elif sensor_type == 'resp':
-            self.chart_widget.setTitle("Breathing Rate")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Value", units='mV')
-            self.resp_plot = self.chart_widget.plot(pen='r')
-            self.update_current_chart()
-
+            title, left, units = "Breathing Rate", "Value", "mV"
+            names  = ['Breathing Rate']
+            pens   = [mkPen(color=(255,  0,   0), width=2)]  # red
+            symbols= [None]
         elif sensor_type == 'accel':
-            self.chart_widget.setTitle("Accelerometer Data")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Acceleration", units='g')
-            self.accel_x_plot = self.chart_widget.plot(pen='r')
-            self.accel_y_plot = self.chart_widget.plot(pen='g')
-            self.accel_z_plot = self.chart_widget.plot(pen='b')
-            self.update_current_chart()
-
+            title, left, units = "Accelerometer Data", "Acceleration", "g"
+            names  = ['X-axis','Y-axis','Z-axis']
+            pens   = [
+                mkPen(color=(255,   0,   0), width=2),  # red
+                mkPen(color=(  0, 255,   0), width=2),  # green
+                mkPen(color=(  0,   0, 255), width=2)   # blue
+            ]
+            symbols= [None, None, None]
         elif sensor_type == 'gyro':
-            self.chart_widget.setTitle("Gyroscope Data")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Angular Velocity", units='deg/s')
-            self.gyro_x_plot = self.chart_widget.plot(pen='r')
-            self.gyro_y_plot = self.chart_widget.plot(pen='g')
-            self.gyro_z_plot = self.chart_widget.plot(pen='b')
-            self.update_current_chart()
-
+            title, left, units = "Gyroscope Data", "Angular Velocity", "deg/s"
+            names  = ['X-Gyro','Y-Gyro','Z-Gyro']
+            pens   = [
+                mkPen(color=(255,   0,   0), width=2),  # red
+                mkPen(color=(  0, 255,   0), width=2),  # green
+                mkPen(color=(  0,   0, 255), width=2)   # blue
+            ]
+            symbols= [None, None, None]
         elif sensor_type == 'temp':
-            self.chart_widget.setTitle("Temperature Data")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Temperature", units='°C')
-            self.obj_temp_plot = self.chart_widget.plot(pen='r')
-            self.amb_temp_plot = self.chart_widget.plot(pen='g')
-            self.update_current_chart()
-            
+            title, left, units = "Temperature Data", "Temperature", "°C"
+            names  = ['Object Temp','Ambient Temp']
+            pens   = [
+                mkPen(color=(255,   0,   0), width=2),  # red
+                mkPen(color=(  0, 255,   0), width=2),  # green
+            ]
+            symbols= [None, None]
         elif sensor_type == 'pressure':
-            self.chart_widget.setTitle("Pressure Data")
-            self.chart_widget.setLabel('bottom', "Time", units='s')
-            self.chart_widget.setLabel('left', "Pressure", units='hPa')
-            self.pressure_plot = self.chart_widget.plot(pen='r')
-            self.update_current_chart()
+            title, left, units = "Pressure Data", "Pressure", "hPa"
+            names  = ['Pressure']
+            pens   = [
+                mkPen(color=(255,   0,   0), width=2),  # red
+            ]
+            symbols= [None]
+        else:
+            return  # unknown type
+
+        # (re)apply styling + legend
+        self.setup_chart(self.chart_widget, title)
+        plot_item = self.chart_widget.getPlotItem()
+        plot_item.setLabel('bottom', 'Time', units='s')
+        plot_item.setLabel('left',   left,   units=units)
+
+        # create each curve, registering it in the legend
+        plots = []
+        for name, pen, symbol in zip(names, pens, symbols):
+            if symbol:
+                p = self.chart_widget.plot(pen=pen, name=name,
+                                        symbol=symbol, symbolSize=5)
+            else:
+                p = self.chart_widget.plot(pen=pen, name=name)
+            plots.append(p)
+
+        # assign back to instance vars so update_current_chart can find them
+        if sensor_type == 'pulse':
+            self.pulse_plot = plots[0]
+        elif sensor_type == 'resp':
+            self.resp_plot = plots[0]
+        elif sensor_type == 'accel':
+            self.accel_x_plot, self.accel_y_plot, self.accel_z_plot = plots
+        elif sensor_type == 'gyro':
+            self.gyro_x_plot, self.gyro_y_plot, self.gyro_z_plot = plots
+        elif sensor_type == 'temp':
+            self.obj_temp_plot, self.amb_temp_plot = plots
+        elif sensor_type == 'pressure':
+            self.pressure_plot = plots[0]
+
+        # finally draw the data
+        self.update_current_chart()
 
     def update_current_chart(self):
         if not self.current_chart_type:
@@ -711,50 +745,39 @@ class AstronautMonitor(QMainWindow):
     def create_navbar(self):
         navbar_widget = QWidget()
         navbar_layout = QHBoxLayout(navbar_widget)
-        navbar_layout.setSpacing(30)
+        navbar_layout.setSpacing(40)
         navbar_layout.setContentsMargins(0, 0, 0, 0) 
+        
+        self.logo_label = QLabel()
+        pixmap = QPixmap("assets/lunarlogo.png")
+        pixmap = pixmap.scaled(250, 90, Qt.KeepAspectRatio)
+        self.logo_label.setPixmap(pixmap)
 
-        # Left Buttons
-        left_buttons = QWidget()
-        left_layout = QHBoxLayout(left_buttons)
+        right_buttons = QWidget()
+        right_layout = QHBoxLayout(right_buttons)
 
         home_button = QPushButton("Home")
         home_button.setObjectName("navButton")
         home_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.home_page))
-        left_layout.addWidget(home_button)
+        right_layout.addWidget(home_button)
         
         data_button = QPushButton("Sensors")
         data_button.setObjectName("navButton")
         data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
-        left_layout.addWidget(data_button)
-
-        # Logo
-        self.logo_label = QLabel()
-        pixmap = QPixmap("assets/lunarlogo.png")
-        pixmap = pixmap.scaled(250, 80, Qt.KeepAspectRatio)
-        self.logo_label.setPixmap(pixmap)
-        self.logo_label.setAlignment(Qt.AlignCenter)
-
-        # Right Buttons
-        right_buttons = QWidget()
-        right_layout = QHBoxLayout(right_buttons)
+        right_layout.addWidget(data_button)
 
         about_button = QPushButton("About")
         about_button.setObjectName("navButton")
         about_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.about_page))
         right_layout.addWidget(about_button)
-        
-        # Button called connect that would refresh the GUI in case the connection dropped
+   
         connect_button = QPushButton("Connect")
         connect_button.setObjectName("navButton")
-        connect_button.clicked.connect(self.refresh_monitoring_page)  # Connect to the refresh function
+        connect_button.clicked.connect(self.refresh_monitoring_page)  
         right_layout.addWidget(connect_button)
     
-        # Add widgets to navbar layout with appropriate stretch factors
-        navbar_layout.addWidget(left_buttons)
-        navbar_layout.addStretch()  # Center the logo with stretch
         navbar_layout.addWidget(self.logo_label)
-        navbar_layout.addStretch()  # Center the logo with stretch
+        navbar_layout.addStretch() 
         navbar_layout.addWidget(right_buttons)
 
         navbar = QToolBar()
