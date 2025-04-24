@@ -1,16 +1,16 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QToolBar,
     QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame,
-    QFormLayout, QLineEdit, QMessageBox, QStackedWidget
+    QFormLayout, QLineEdit, QMessageBox
 )
 
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QObject
-from PySide6.QtGui import QPixmap, QFontDatabase, QFont, QIntValidator
+from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtGui import QPixmap, QFont, QIntValidator
 from pymongo import MongoClient
 import time
 from dotenv import load_dotenv
 import pyqtgraph as pg
-from pyqtgraph import PlotWidget, mkPen
+from pyqtgraph import mkPen
 from collections import deque
 import sys
 import os
@@ -23,7 +23,6 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import joblib
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers
 from bluetooth import NordicBLEWorker
 
 # Load the trained model and preprocessing objects
@@ -125,8 +124,8 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    #NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
-    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
+    # NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -333,12 +332,15 @@ class AstronautMonitor(QMainWindow):
     def initUI(self):
         self.central_stack = QStackedWidget()
         self.setCentralWidget(self.central_stack)
+        
         self.home_page = QWidget()
         self.data_page = QWidget()  
         self.about_page = QWidget()
+        
         self.init_home_page()
         self.init_data_page() 
         self.init_about_page()
+        
         self.central_stack.addWidget(self.home_page)
         self.central_stack.addWidget(self.data_page)
         self.central_stack.addWidget(self.about_page)  
@@ -404,21 +406,25 @@ class AstronautMonitor(QMainWindow):
                 "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
                 "grid_position": (2, 0)
             },
-            "MPU_Accelerometer": {
-                "display_name": "Rate Of Steps",
-                #"measurements": {"steps": "Total Steps"},
-                "measurements": {"rate": "Step Rate"},
-                "grid_position": (3, 0)
-            },
             "MLX_ObjectTemperature": {
                 "display_name": "Body Temperature",
                 "measurements": {"Celsius": "Temperature (°C)"},
-                "grid_position": (1, 2)  # Right column
+                "grid_position": (3, 0)  
+            },
+            "MPU_Accelerometer": {
+                "display_name": "Rate Of Steps",
+                "measurements": {"step_rate": "Step Rate"},
+                "grid_position": (1, 2)
+            },
+            "MPU_Gyroscope": {
+                "display_name": "Rate of Arm Swings",
+                "measurements": {"rotation_rate": "Rotation Rate"},
+                "grid_position": (2, 2)
             },
             "BMP_Pressure": {
                 "display_name": "Atmospheric Pressure",
                 "measurements": {"hPa": "Pressure (hPa)"},
-                "grid_position": (2, 2)
+                "grid_position": (3, 2)
             },
         }
         
@@ -427,6 +433,7 @@ class AstronautMonitor(QMainWindow):
             "PulseSensor": "pulse",
             "RespiratoryRate": "resp",
             "MPU_Accelerometer": "accel",
+            "MPU_Gyroscope": "gyro",
             "MLX_ObjectTemperature": "temp",
             "BMP_Pressure": "pressure", 
         }
@@ -437,24 +444,21 @@ class AstronautMonitor(QMainWindow):
             row, col = config['grid_position']
             layout.addWidget(sensor_box, row, col)
 
-        # Add astronaut image
+        # Create astronaut image
         center_image = QLabel()
         center_image.setObjectName("centerImage")
-        center_image.setFixedSize(300, 510)  
+        center_image.setFixedSize(300, 510)
         center_image.setScaledContents(True)
         pixmap = QPixmap('assets/spaceman.png')
         center_image.setPixmap(pixmap)
-
-        # Place image in center column spanning rows 1 to 3
-        layout.addWidget(center_image, 1, 1, 3, 1, Qt.AlignCenter)
         
-        # Create the “Current Activity” display label:
+        layout.addWidget(center_image, 1, 1, 3, 1, Qt.AlignCenter)
+
+        # Create the “Current Activity” display label
         self.activity_label = QLabel("Current Activity: N/A")
         self.activity_label.setObjectName("activityLabel")
         self.activity_label.setAlignment(Qt.AlignCenter)
-
-        # Place it at row 3, column 2 in the grid:
-        layout.addWidget(self.activity_label, 3, 2)
+        layout.addWidget(self.activity_label, 1, 1)
 
         # Set column and row stretch for even spacing
         layout.setColumnStretch(0, 1)  # Left

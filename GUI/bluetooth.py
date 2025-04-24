@@ -100,7 +100,7 @@ class NordicBLEWorker(QThread):
                     else:
                         self.data_received.emit(data_list)
                 except json.JSONDecodeError as e:
-                    logging.error(f"JSON Decode Error: {e}")
+                    logging.error(f"JSON Decode Error: {e}, data: {json_str}")
                 except Exception as e:
                     logging.error(f"Error processing JSON: {e}")
 
