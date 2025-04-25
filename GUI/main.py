@@ -6,32 +6,28 @@ from PySide6.QtWidgets import (
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QPixmap, QFont, QIntValidator
-from pymongo import MongoClient
 import time
 from dotenv import load_dotenv
 import pyqtgraph as pg
 from pyqtgraph import mkPen
 from collections import deque
+from pymongo import MongoClient
 import sys
 import os
 import numpy as np
 import logging
-import re  
+import joblib
+from bluetooth import NordicBLEWorker
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-  
-import joblib
-import numpy as np
+
 import tensorflow as tf
-from bluetooth import NordicBLEWorker
+
 
 # Load the trained model and preprocessing objects
 class MLManager(QObject):
     # Define a signal that emits three objects (model, scaler, encoder)
     artifacts_ready = Signal(object, object, object)
-
-    def __init__(self):
-        super().__init__()
 
     def load_artifacts(self):
         try:
@@ -39,7 +35,7 @@ class MLManager(QObject):
             model = tf.keras.models.load_model("activity_model_mongodb.keras")
             scaler = joblib.load("feature_scaler_mongodb.joblib")
             encoder = joblib.load("activity_encoder_mongodb.joblib")
-            print("Loaded trained model and preprocessing objects.")
+            # print("Loaded trained model and preprocessing objects.")
             # Emit the loaded artifacts
             self.artifacts_ready.emit(model, scaler, encoder)
         except Exception as e:
@@ -124,8 +120,8 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
-    # NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    # NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
+    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -194,7 +190,7 @@ class AstronautMonitor(QMainWindow):
         self.model = model
         self.scaler = scaler
         self.encoder = encoder
-        print("ML artifacts are ready for use in predictions.")
+        # print("ML artifacts are ready for use in predictions.")
          
     def setup_ble_worker(self):
         # Instantiate the BLE worker with your device's MAC address and the RX characteristic UUID.
@@ -231,6 +227,20 @@ class AstronautMonitor(QMainWindow):
                 self.mongo_buffer = []
             except Exception as e:
                 logging.error(f"Error inserting into MongoDB: {e}")
+                
+    def update_blood_oxygen(self, SPO2: float):
+        if SPO2 > 95:
+            status = "Normal"
+        elif SPO2 > 90:
+            status = "Concerning"
+        elif SPO2 > 85:
+            status = "Low"
+        elif SPO2 == 0:
+            status = "Not Detected"
+        else:
+            status = "Critical"
+
+        self.blood_oxygen_label.setText(f"Blood Oxygen: {status}")
                 
     def update_prediction_display(self, prediction):
         """Update the UI with the predicted activity."""
@@ -323,6 +333,10 @@ class AstronautMonitor(QMainWindow):
                         value = sensor_data["hPa"]
                         self.pressure.append(value)
                         # print(f"[BMP_Pressure] Appended hPa: {value} (Total Count: {len(self.pressure)})")
+                    elif sensor_name == "MAX_SPO2 Sensor" and "SPO2" in sensor_data:
+                        value = sensor_data["SPO2"]
+                        self.update_blood_oxygen(value)
+                        # print(f"[MAX_SPO2 Sensor] Appended SPO2: {value} (Total Count: {len(self.blood_oxygen_label)})")
 
                 self.on_new_sensor_data()
 
@@ -399,7 +413,7 @@ class AstronautMonitor(QMainWindow):
             "PulseSensor": {
                 "display_name": "Heart Rate Monitor",
                 "measurements": {"pulse_BPM": "Heart Rate (BPM)"},
-                "grid_position": (1, 0)  # Left column
+                "grid_position": (1, 0)  
             },
             "RespiratoryRate": {
                 "display_name": "Breathing Rate Monitor",
@@ -448,25 +462,26 @@ class AstronautMonitor(QMainWindow):
         center_image = QLabel()
         center_image.setObjectName("centerImage")
         center_image.setFixedSize(300, 510)
-        center_image.setScaledContents(True)
+        center_image.setAlignment(Qt.AlignCenter)
         pixmap = QPixmap('assets/spaceman.png')
-        center_image.setPixmap(pixmap)
+        scaled = pixmap.scaled(
+            225, 370,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        center_image.setPixmap(scaled)
         
         layout.addWidget(center_image, 1, 1, 3, 1, Qt.AlignCenter)
 
-        # Create the “Current Activity” display label
         self.activity_label = QLabel("Current Activity: N/A")
         self.activity_label.setObjectName("activityLabel")
         self.activity_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.activity_label, 1, 1)
-
-        # Set column and row stretch for even spacing
-        layout.setColumnStretch(0, 1)  # Left
-        layout.setColumnStretch(1, 1)  # Center
-        layout.setColumnStretch(2, 1)  # Right
-        layout.setRowStretch(1, 1)
-        layout.setRowStretch(2, 1)
-        layout.setRowStretch(3, 1)
+        
+        self.blood_oxygen_label = QLabel("Blood Oxygen: N/A")
+        self.blood_oxygen_label.setObjectName("bloodOxygenLabel")
+        self.blood_oxygen_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.blood_oxygen_label, 3, 1)
 
         self.home_page.setLayout(layout)
 
