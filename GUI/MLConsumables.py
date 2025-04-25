@@ -1,4 +1,7 @@
 import os
+
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -35,17 +38,6 @@ def fetch_training_data():
     return data
 
 def process_training_data(data):
-    """
-    Process raw MongoDB data into a DataFrame by grouping documents that share the same
-    (rounded) timestamp and activity_id, then merging the sensor fields from each group.
-    
-    Each training sample is expected to provide:
-      - 'RespiratoryRate' with the nested key 'BRPM',
-      - 'MLX_ObjectTemperature' with the nested key 'celsius',
-      - 'activity_id'.
-    
-    Documents that do not contribute both sensor values will be skipped.
-    """
     # Group documents by a key based on the integer part of the timestamp and activity_id.
     grouped = {}
     for doc in data:
@@ -62,38 +54,44 @@ def process_training_data(data):
     for key, record in grouped.items():
         # Check for the required sensor groups.
         pulse_data = record.get('PulseSensor')
-        temp_data = record.get('MLX_ObjectTemperature')
-        if pulse_data is None or temp_data is None:
+        resp_data = record.get('RespiratoryRate')
+        temp_data = record.get('ObjectTemp')
+        step_data = record.get('Accel')
+        rotate_data = record.get('Gyro')
+        
+        if pulse_data is None or resp_data is None or temp_data is None or step_data is None or rotate_data is None:
+            print(f"Missing sensor data for key {key}.")
             # Skip this group if one of the sensors is missing.
             continue
         
-        bpm = pulse_data.get('pulse_BPM')
-        celsius = temp_data.get('Celsius')
-        if bpm is not None and celsius is not None:
-            processed.append({
-                'avg_bpm': bpm,          # Using pulse_BPM from PulseSensor.
-                'body_temp': celsius,      # Using Celsius from MLX_ObjectTemperature.
-                'activity_id': record.get('activity_id')
-            })
-        else:
-            print("Grouped record missing required nested keys:", record)
+        processed.append({
+            'avg_bpm': pulse_data.get('pulse_BPM'),
+            'avg_resp': resp_data.get('BRPM'),        
+            'body_temp': temp_data.get('Celsius'), 
+            'step_rate': step_data.get('step_rate'),
+            'rotation_rate': rotate_data.get('rotation_rate'),   
+            'activity_id': record.get('activity_id')
+        })
             
     if not processed:
         print("No valid training data found.")
     return pd.DataFrame(processed)
 
 def prepare_features_labels(df):
-    """Create feature and label arrays, applying scaling and one-hot encoding."""
+    print(df.isnull().sum())
     # Extract features and labels
-    X = df[['avg_bpm', 'body_temp']].values
-    y = df['activity_id'].values.reshape(-1, 1)
+    df = df.dropna(subset=[
+        'avg_bpm','avg_resp','body_temp','step_rate','rotation_rate'
+    ])
+    X = df[['avg_bpm','avg_resp','body_temp','step_rate','rotation_rate']].values
+    y = df['activity_id'].values.reshape(-1, 1)    
 
     # Feature scaling
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
     # One-hot encoding of labels
-    encoder = OneHotEncoder(sparse=False, handle_unknown='ignore')
+    encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
     y_encoded = encoder.fit_transform(y)
 
     return X_scaled, y_encoded, scaler, encoder
@@ -115,7 +113,7 @@ def train_activity_model():
 
     num_classes = y_train.shape[1]
     model = tf.keras.Sequential([
-        layers.InputLayer(shape=(2,)),  # Two features: avg_bpm and body_temp
+        layers.InputLayer(shape=(5,)), 
         layers.Dense(64, activation='relu'),
         layers.Dense(32, activation='relu'),
         layers.Dense(num_classes, activation='softmax')

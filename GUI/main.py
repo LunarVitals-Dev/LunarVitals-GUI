@@ -23,7 +23,6 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
 import tensorflow as tf
 
-
 # Load the trained model and preprocessing objects
 class MLManager(QObject):
     # Define a signal that emits three objects (model, scaler, encoder)
@@ -120,8 +119,8 @@ class IntroPage(QWidget):
         self.profile_submitted.emit(name, gender, age)
 
 class AstronautMonitor(QMainWindow):
-    # NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
-    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
+    # NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -206,15 +205,21 @@ class AstronautMonitor(QMainWindow):
         self.accel_x = deque(maxlen=self.maxlen)
         self.accel_y = deque(maxlen=self.maxlen)
         self.accel_z = deque(maxlen=self.maxlen)
+        self.step_rate = deque(maxlen=self.maxlen)
         self.gyro_x = deque(maxlen=self.maxlen)
         self.gyro_y = deque(maxlen=self.maxlen)
         self.gyro_z = deque(maxlen=self.maxlen)
+        self.rotate_rate = deque(maxlen=self.maxlen)
         self.obj_temp = deque(maxlen=self.maxlen)
         self.amb_temp = deque(maxlen=self.maxlen)
         self.pressure = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
 
     def send_to_mongo(self, sensor_data):
+        # add the astronaut info
+        sensor_data['astronaut_name']   = self.astronaut_name
+        sensor_data['astronaut_gender'] = self.astronaut_gender
+        sensor_data['astronaut_age']    = self.astronaut_age
         sensor_data['timestamp'] = time.time()
         sensor_data['activity_id'] = self.current_activity
         self.mongo_buffer.append(sensor_data)
@@ -251,19 +256,19 @@ class AstronautMonitor(QMainWindow):
         
     def on_new_sensor_data(self):
         now = time.time()
-        # print(f"  pulse entries: {len(self.pulse)}")
-        # print(f"  temp entries:  {len(self.obj_temp)}")
-        # print(f"  seconds since last: {now - self.last_prediction:.1f}")
 
-        if self.pulse and self.obj_temp and (now - self.last_prediction) >= 10:
+        if self.pulse and self.resp and self.obj_temp and self.step_rate and self.rotate_rate and (now - self.last_prediction) >= 10:
             self.last_prediction = now
 
             # compute the 10‑s averages
             avg_bpm  = np.mean(self.pulse)
+            avg_brpm = np.mean(self.resp)
             body_temp = np.mean(self.obj_temp)
+            step_rate = np.mean(self.step_rate)
+            rotate_rate = np.mean(self.rotate_rate)
 
             # scale, predict, decode
-            X_new    = np.array([[avg_bpm, body_temp]])
+            X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
             X_scaled = self.scaler.transform(X_new)
             probs    = self.model.predict(X_scaled)
             idx      = np.argmax(probs, axis=1)[0]
@@ -300,43 +305,39 @@ class AstronautMonitor(QMainWindow):
                         value = sensor_data["Value_mV"]
                         self.pulse.append(value)
                         self.timestamps.append(time.time())
-                        # print(f"[PulseSensor] Appended Value_mV: {value} (Total Count: {len(self.pulse)})")
                     elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
                         value = sensor_data["avg_mV"]
                         self.resp.append(value)
-                        # print(f"[RespiratoryRate] Appended avg_mV: {value} (Total Count: {len(self.resp)})")
-                    elif sensor_name == "MPU_Accelerometer":
+                    elif sensor_name == "Accel":
                         x = sensor_data.get("X_g", 0)
                         y = sensor_data.get("Y_g", 0)
                         z = sensor_data.get("Z_g", 0)
+                        step = sensor_data.get("step_rate", 0)
                         self.accel_x.append(x)
                         self.accel_y.append(y)
                         self.accel_z.append(z)
-                        # print(f"[MPU_Accelerometer] Appended X_g: {x}, Y_g: {y}, Z_g: {z} (Total Count: {len(self.accel_x)})")
-                    elif sensor_name == "MPU_Gyroscope":
-                        x = sensor_data.get("X_deg_per_s", 0)
-                        y = sensor_data.get("Y_deg_per_s", 0)
-                        z = sensor_data.get("Z_deg_per_s", 0)
+                        self.step_rate.append(step)
+                    elif sensor_name == "Gyro":
+                        x = sensor_data.get("X_deg", 0)
+                        y = sensor_data.get("Y_deg", 0)
+                        z = sensor_data.get("Z_deg", 0)
+                        rotate = sensor_data.get("rotation_rate", 0)
                         self.gyro_x.append(x)
                         self.gyro_y.append(y)
                         self.gyro_z.append(z)
-                        # print(f"[MPU_Gyroscope] Appended X_deg_per_s: {x}, Y_deg_per_s: {y}, Z_deg_per_s: {z} (Total Count: {len(self.gyro_x)})")
-                    elif sensor_name == "MLX_ObjectTemperature" and "Celsius" in sensor_data:
+                        self.rotate_rate.append(rotate)
+                    elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
                         value = sensor_data["Celsius"]
                         self.obj_temp.append(value)
-                        # print(f"[MLX_ObjectTemperature] Appended Celsius: {value} (Total Count: {len(self.obj_temp)})")
-                    elif sensor_name == "MLX_AmbientTemperature" and "Celsius" in sensor_data:
+                    elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
                         value = sensor_data["Celsius"]
                         self.amb_temp.append(value)
-                        # print(f"[MLX_AmbientTemperature] Appended Celsius: {value} (Total Count: {len(self.amb_temp)})")
-                    elif sensor_name == "BMP_Pressure" and "hPa" in sensor_data:
+                    elif sensor_name == "Pressure" and "hPa" in sensor_data:
                         value = sensor_data["hPa"]
                         self.pressure.append(value)
-                        # print(f"[BMP_Pressure] Appended hPa: {value} (Total Count: {len(self.pressure)})")
-                    elif sensor_name == "MAX_SPO2 Sensor" and "SPO2" in sensor_data:
+                    elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
                         value = sensor_data["SPO2"]
                         self.update_blood_oxygen(value)
-                        # print(f"[MAX_SPO2 Sensor] Appended SPO2: {value} (Total Count: {len(self.blood_oxygen_label)})")
 
                 self.on_new_sensor_data()
 
@@ -420,22 +421,22 @@ class AstronautMonitor(QMainWindow):
                 "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
                 "grid_position": (2, 0)
             },
-            "MLX_ObjectTemperature": {
+            "ObjectTemp": {
                 "display_name": "Body Temperature",
                 "measurements": {"Celsius": "Temperature (°C)"},
                 "grid_position": (3, 0)  
             },
-            "MPU_Accelerometer": {
+            "Accel": {
                 "display_name": "Rate Of Steps",
-                "measurements": {"step_rate": "Step Rate"},
+                "measurements": {"step_rate": "Step Rate (steps/min)"},
                 "grid_position": (1, 2)
             },
-            "MPU_Gyroscope": {
+            "Gyro": {
                 "display_name": "Rate of Arm Swings",
-                "measurements": {"rotation_rate": "Rotation Rate"},
+                "measurements": {"rotation_rate": "Rotation Rate (steps/min)"},
                 "grid_position": (2, 2)
             },
-            "BMP_Pressure": {
+            "Pressure": {
                 "display_name": "Atmospheric Pressure",
                 "measurements": {"hPa": "Pressure (hPa)"},
                 "grid_position": (3, 2)
@@ -446,10 +447,10 @@ class AstronautMonitor(QMainWindow):
         self.sensor_to_chart_type = {
             "PulseSensor": "pulse",
             "RespiratoryRate": "resp",
-            "MPU_Accelerometer": "accel",
-            "MPU_Gyroscope": "gyro",
-            "MLX_ObjectTemperature": "temp",
-            "BMP_Pressure": "pressure", 
+            "Accel": "accel",
+            "Gyro": "gyro",
+            "ObjectTemp": "temp",
+            "Pressure": "pressure", 
         }
 
         # Create sensor boxes using the helper function
