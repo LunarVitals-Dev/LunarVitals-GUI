@@ -824,14 +824,14 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Astronaut Health Monitor")
         
-        self.resize(1024, 768)
+        self.resize(1280, 800)
 
     def start_monitoring(self, name, gender, age):
         self.monitoring_page = AstronautMonitor(name, gender, age)
         self.stack.addWidget(self.monitoring_page)
         self.stack.setCurrentWidget(self.monitoring_page)
         
-        self.resize(1024, 768)
+        self.resize(1280, 800)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
