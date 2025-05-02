@@ -57,7 +57,7 @@ class NordicBLEWorker(QThread):
                     except Exception as e:
                         logging.error(f"Error during read: {e}")
 
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(1)
 
         except Exception as e:
             logging.error(f"BLE connection error: {e}")

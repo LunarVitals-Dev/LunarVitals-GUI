@@ -126,9 +126,7 @@ QPushButton:hover {
 #centerImage {
     border: 2px solid #4a90e2;
     background-color: white;
-    padding: 5px;
     border-radius: 10px;
-    margin: 10px;
 }
 
 /* Grid Layout Spacing */
@@ -226,17 +224,16 @@ QGridLayout {
 }
 
 #activityLabel {
-    color: #062a61;           /* dark blue like your headers */
-    font-size: 20px;          /* bump the size if you like */
+    color: #062a61;           
+    font-size: 20px;        
     font-weight: bold;
     background-color: transparent;
-    margin: 8px;
 }
 
 #bloodOxygenLabel {
-    color: #062a61;           /* dark blue like your headers */
-    font-size: 20px;          /* bump the size if you like */
+    color: #062a61;          
+    font-size: 20px;         
     font-weight: bold;
     background-color: transparent;
-    margin: 8px;
+    margin-top: 20px;
 }

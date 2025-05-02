@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QToolBar,
     QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame,
-    QFormLayout, QLineEdit, QMessageBox
+    QFormLayout, QLineEdit
 )
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
@@ -17,6 +17,8 @@ import os
 import numpy as np
 import logging
 import joblib
+from scipy.signal import find_peaks
+from pyqtgraph import InfiniteLine
 from bluetooth import NordicBLEWorker
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -41,7 +43,7 @@ class MLManager(QObject):
             print("Error loading trained artifacts:", e)
 
 class IntroPage(QWidget):
-    profile_submitted = Signal(str, str, int)
+    profile_submitted = Signal(str, str, int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -87,6 +89,15 @@ class IntroPage(QWidget):
         self.age_input.setMaxLength(2) 
         self.age_input.setText("21") # need to comment out
         form_layout.addRow(QLabel("Age:"), self.age_input)
+        
+        # Weight input
+        self.weight_input = QLineEdit()
+        self.weight_input.setObjectName("introForm") 
+        self.weight_input.setPlaceholderText("Enter astronaut's weight")
+        self.weight_input.setValidator(QIntValidator(self)) 
+        self.weight_input.setMaxLength(3) 
+        self.weight_input.setText("140") # need to comment out
+        form_layout.addRow(QLabel("Weight:"), self.weight_input)
 
         layout.addWidget(form_widget)
 
@@ -108,28 +119,28 @@ class IntroPage(QWidget):
         name = self.name_input.text().strip()
         gender = self.gender_combo.currentText()
         age_text = self.age_input.text().strip()
-
-        # Validate name and age
-        if not name or not age_text:
-            QMessageBox.warning(self, "Input Error", "Please enter the astronaut's name and age.")
-            return
+        weight_text = self.weight_input.text().strip()
 
         age = int(age_text)
+        weight = int(weight_text)
 
-        self.profile_submitted.emit(name, gender, age)
+        self.profile_submitted.emit(name, gender, age, weight)
+
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "DF:9E:5B:95:6A:D9" 
+    NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A"
     # NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
-    def __init__(self, name, gender, age):
+    def __init__(self, name, gender, age, weight):
         super().__init__()
         
+        self.peak_lines = []
         self.astronaut_name = name
         self.astronaut_gender = gender
         self.astronaut_age = age
+        self.astronaut_weight = weight
         
         self.model = None
         self.scaler = None
@@ -214,16 +225,7 @@ class AstronautMonitor(QMainWindow):
         self.amb_temp = deque(maxlen=self.maxlen)
         self.pressure = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
-
-    def send_to_mongo(self, sensor_data):
-        # add the astronaut info
-        sensor_data['astronaut_name']   = self.astronaut_name
-        sensor_data['astronaut_gender'] = self.astronaut_gender
-        sensor_data['astronaut_age']    = self.astronaut_age
-        sensor_data['timestamp'] = time.time()
-        sensor_data['activity_id'] = self.current_activity
-        self.mongo_buffer.append(sensor_data)
-        #print(f"Data added to buffer: {sensor_data}")
+        self.spo2_buffer = deque(maxlen=5)
         
     def flush_mongo_buffer(self):
         if self.mongo_buffer:
@@ -233,7 +235,9 @@ class AstronautMonitor(QMainWindow):
             except Exception as e:
                 logging.error(f"Error inserting into MongoDB: {e}")
                 
-    def update_blood_oxygen(self, SPO2: float):
+    def update_blood_oxygen(self, SPO2):
+        self.spo2_buffer.append(SPO2)
+        SPO2 = np.median(self.spo2_buffer)
         if SPO2 > 95:
             status = "Normal"
         elif SPO2 > 90:
@@ -245,7 +249,7 @@ class AstronautMonitor(QMainWindow):
         else:
             status = "Critical"
 
-        self.blood_oxygen_label.setText(f"Blood Oxygen: {status}")
+        self.blood_oxygen_label.setText(f"SpO2: {status}")
                 
     def update_prediction_display(self, prediction):
         """Update the UI with the predicted activity."""
@@ -276,73 +280,103 @@ class AstronautMonitor(QMainWindow):
 
             # update the UI
             self.update_prediction_display(label)
-
+            
     def handle_ble_data(self, data):
         try:
-            # merge list → dict as you already do…
+            now_ts = time.time()
+
+            # 2) flatten list→dict
             if isinstance(data, list):
-                merged_data = {}
-                for sensor_obj in data:
-                    merged_data.update(sensor_obj)
-                data = merged_data
+                merged = {}
+                for obj in data:
+                    merged.update(obj)
+                data = merged
 
-            # write to Mongo, etc.
-            self.send_to_mongo(data)
-
-            # initialize once
+            # 3) update latest_data cache
             if not hasattr(self, 'latest_data'):
                 self.latest_data = {}
-
-            # update just the keys you got this time
             self.latest_data.update(data)
-            
-            # print(data)
 
-            # Process each sensor's data.
+            # 4) for each sensor, update buffers, UI, and build one Mongo doc
             for sensor_name, sensor_data in data.items():
-                if isinstance(sensor_data, dict):
-                    if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
-                        value = sensor_data["Value_mV"]
-                        self.pulse.append(value)
-                        self.timestamps.append(time.time())
-                    elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
-                        value = sensor_data["avg_mV"]
-                        self.resp.append(value)
-                    elif sensor_name == "Accel":
-                        x = sensor_data.get("X_g", 0)
-                        y = sensor_data.get("Y_g", 0)
-                        z = sensor_data.get("Z_g", 0)
-                        step = sensor_data.get("step_rate", 0)
-                        self.accel_x.append(x)
-                        self.accel_y.append(y)
-                        self.accel_z.append(z)
-                        self.step_rate.append(step)
-                    elif sensor_name == "Gyro":
-                        x = sensor_data.get("X_deg", 0)
-                        y = sensor_data.get("Y_deg", 0)
-                        z = sensor_data.get("Z_deg", 0)
-                        rotate = sensor_data.get("rotation_rate", 0)
-                        self.gyro_x.append(x)
-                        self.gyro_y.append(y)
-                        self.gyro_z.append(z)
-                        self.rotate_rate.append(rotate)
-                    elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
-                        value = sensor_data["Celsius"]
-                        self.obj_temp.append(value)
-                    elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
-                        value = sensor_data["Celsius"]
-                        self.amb_temp.append(value)
-                    elif sensor_name == "Pressure" and "hPa" in sensor_data:
-                        value = sensor_data["hPa"]
-                        self.pressure.append(value)
-                    elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
-                        value = sensor_data["SPO2"]
-                        self.update_blood_oxygen(value)
+                if not isinstance(sensor_data, dict):
+                    continue
 
+                # update raw buffers & UI
+                if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
+                    val = sensor_data["Value_mV"]
+                    self.pulse.append(val)
+
+                elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
+                    val = sensor_data["avg_mV"]
+                    self.resp.append(val)
+                    self.timestamps.append(now_ts)
+
+                elif sensor_name == "Accel":
+                    x = sensor_data.get("X_g",0)
+                    y = sensor_data.get("Y_g",0)
+                    z = sensor_data.get("Z_g",0)
+                    step = sensor_data.get("step_rate",0)
+                    self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
+                    self.step_rate.append(step)
+
+                elif sensor_name == "Gyro":
+                    x = sensor_data.get("X_deg",0)
+                    y = sensor_data.get("Y_deg",0)
+                    z = sensor_data.get("Z_deg",0)
+                    rotate = sensor_data.get("rotation_rate",0)
+                    self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
+                    self.rotate_rate.append(rotate)
+
+                elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
+                    val = sensor_data["Celsius"]
+                    self.obj_temp.append(val)
+
+                elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
+                    val = sensor_data["Celsius"]
+                    self.amb_temp.append(val)
+
+                elif sensor_name == "Pressure" and "hPa" in sensor_data:
+                    val = sensor_data["hPa"]
+                    self.pressure.append(val)
+
+                elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
+                    val = sensor_data["SPO2"]
+                    self.update_blood_oxygen(val)
+
+                # 5) build the Mongo document
+                doc = {
+                    'sensor':          sensor_name,
+                    'astronaut_name':  self.astronaut_name,
+                    'astronaut_gender':self.astronaut_gender,
+                    'astronaut_age':   self.astronaut_age,
+                    'astronaut_weight':self.astronaut_weight,
+                    'timestamp':       now_ts,
+                    'activity_id':     self.current_activity
+                }
+                doc.update(sensor_data)
+
+                if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
+                    brpm = self.compute_breathing_rate(
+                        list(self.resp),
+                        list(self.timestamps)
+                    )
+                    if brpm is not None:
+                        doc['BRPM'] = brpm
+                        lbl = self.data_labels["RespiratoryRate"]["BRPM"]
+                        disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
+                        lbl.setText(f"{disp}: {brpm:.0f}")
+                        
                 self.on_new_sensor_data()
 
+                # 7) queue for Mongo
+                self.mongo_buffer.append(doc)
+
+            # 8) flush buffer and run prediction
+            self.flush_mongo_buffer()
+
         except Exception as e:
-            logging.error(f"Error processing BLE data: {e}")
+            logging.error(f"Error processing BLE data: {e}")    
 
     def initUI(self):
         self.central_stack = QStackedWidget()
@@ -397,6 +431,27 @@ class AstronautMonitor(QMainWindow):
 
         sensor_box.setLayout(box_layout)
         return sensor_box
+    
+    def compute_breathing_rate(self, resp_data, timestamps):
+        # align lengths
+        resp_arr = np.asarray(resp_data)
+        time_arr = np.asarray(timestamps)
+        if resp_arr.size != time_arr.size:
+            n = min(resp_arr.size, time_arr.size)
+            resp_arr  = resp_arr[-n:]
+            time_arr  = time_arr[-n:]
+        if resp_arr.size < 2:
+            return None
+
+        peaks, _    = find_peaks(resp_arr, height=0.1, distance=1)
+        peak_times  = time_arr[peaks]
+        if peak_times.size < 2:
+            return None
+
+        intervals        = np.diff(peak_times)
+        avg_interval_sec = intervals.mean()
+        breathing_rate_bpm = 60 / avg_interval_sec
+        return int(breathing_rate_bpm)
         
     def init_home_page(self):
         layout = QGridLayout()
@@ -459,14 +514,13 @@ class AstronautMonitor(QMainWindow):
             row, col = config['grid_position']
             layout.addWidget(sensor_box, row, col)
 
-        # Create astronaut image
+               # Create astronaut image
         center_image = QLabel()
         center_image.setObjectName("centerImage")
-        center_image.setFixedSize(300, 510)
         center_image.setAlignment(Qt.AlignCenter)
         pixmap = QPixmap('assets/spaceman.png')
         scaled = pixmap.scaled(
-            225, 370,
+            230, 410,
             Qt.KeepAspectRatio,
             Qt.SmoothTransformation
         )
@@ -485,7 +539,6 @@ class AstronautMonitor(QMainWindow):
         layout.addWidget(self.blood_oxygen_label, 3, 1)
 
         self.home_page.setLayout(layout)
-
 
     def update_home_page(self):
         # print(">>> latest_data keys:", list(self.latest_data.keys()))
@@ -709,9 +762,32 @@ class AstronautMonitor(QMainWindow):
                 self.pulse_plot.setData(relative_timestamps, pulse_np)
 
         elif self.current_chart_type == 'resp':
-            if self.resp and self.timestamps:
+           if self.resp and self.timestamps:
                 resp_np = np.array(self.resp)
-                self.resp_plot.setData(relative_timestamps[:len(resp_np)], resp_np)
+                ts_np = np.array(self.timestamps)[:len(resp_np)]
+                rel_ts = ts_np - ts_np[0]
+
+                self.resp_plot.setData(rel_ts, resp_np)
+
+                # Compute and display breathing rate
+                rate = self.compute_breathing_rate(resp_np, ts_np)
+                if rate:
+                    self.chart_widget.setTitle(f"Breathing Rate ({rate:.0f} bpm)")
+
+                # Detect peaks and show vertical linesfind_peaks(resp_data, height=0.1, distance=1)
+                peaks, _ = find_peaks(resp_np, height=0.1, distance=1)
+                peak_times = rel_ts[peaks]
+
+                # Remove previous lines
+                for line in self.peak_lines:
+                    self.chart_widget.removeItem(line)
+                self.peak_lines.clear()
+
+                # Add new lines
+                for pt in peak_times:
+                    line = InfiniteLine(pos=pt, angle=90, pen=mkPen(color='b', style=Qt.DashLine))
+                    self.chart_widget.addItem(line)
+                    self.peak_lines.append(line)
 
         elif self.current_chart_type == 'accel':
             if self.accel_x and self.timestamps:
@@ -826,8 +902,8 @@ class MainWindow(QMainWindow):
         
         self.resize(1280, 800)
 
-    def start_monitoring(self, name, gender, age):
-        self.monitoring_page = AstronautMonitor(name, gender, age)
+    def start_monitoring(self, name, gender, age, weight):
+        self.monitoring_page = AstronautMonitor(name, gender, age, weight)
         self.stack.addWidget(self.monitoring_page)
         self.stack.setCurrentWidget(self.monitoring_page)
         
