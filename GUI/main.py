@@ -128,8 +128,8 @@ class IntroPage(QWidget):
 
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A"
-    # NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    #NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A"
+    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -150,7 +150,7 @@ class AstronautMonitor(QMainWindow):
         
         load_dotenv()
         
-        MONGODB_URI = os.getenv("MONGODB_URI")
+        MONGODB_URI = 
         # print(f"MONGODB_URI: {MONGODB_URI}")
 
         try:
@@ -180,7 +180,7 @@ class AstronautMonitor(QMainWindow):
         self.ml_manager.load_artifacts()
 
         self.initUI()
-
+        self.mongo_upload_enabled = False
         self.mongo_buffer = []
         
         self.last_prediction = 0.0
@@ -209,6 +209,10 @@ class AstronautMonitor(QMainWindow):
         self.ble_worker.data_received.connect(self.handle_ble_data)
         self.ble_worker.start()
 
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(lambda: self.update_connection_status(self.ble_worker.is_connected()))
+        self.update_timer.start(1000)  # check every 1 second
+
     def init_data_buffers(self):
         self.maxlen = 100
         self.pulse = deque(maxlen=self.maxlen)
@@ -228,12 +232,18 @@ class AstronautMonitor(QMainWindow):
         self.spo2_buffer = deque(maxlen=5)
         
     def flush_mongo_buffer(self):
+        if not self.mongo_upload_enabled:
+         
+            self.mongo_buffer = []  # Clear it anyway to avoid memory buildup
+            return
+
         if self.mongo_buffer:
             try:
                 self.collection.insert_many(self.mongo_buffer)
                 self.mongo_buffer = []
             except Exception as e:
                 logging.error(f"Error inserting into MongoDB: {e}")
+
                 
     def update_blood_oxygen(self, SPO2):
         self.spo2_buffer.append(SPO2)
@@ -281,11 +291,108 @@ class AstronautMonitor(QMainWindow):
             # update the UI
             self.update_prediction_display(label)
             
+    # def handle_ble_data(self, data):
+    #     try:
+    #         now_ts = time.time()
+
+    #         # 2) flatten list→dict
+    #         if isinstance(data, list):
+    #             merged = {}
+    #             for obj in data:
+    #                 merged.update(obj)
+    #             data = merged
+
+    #         # 3) update latest_data cache
+    #         if not hasattr(self, 'latest_data'):
+    #             self.latest_data = {}
+    #         self.latest_data.update(data)
+
+    #         # 4) for each sensor, update buffers, UI, and build one Mongo doc
+    #         for sensor_name, sensor_data in data.items():
+    #             if not isinstance(sensor_data, dict):
+    #                 continue
+
+    #             # update raw buffers & UI
+    #             if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
+    #                 val = sensor_data["Value_mV"]
+    #                 self.pulse.append(val)
+
+    #             elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
+    #                 val = sensor_data["avg_mV"]
+    #                 self.resp.append(val)
+    #                 self.timestamps.append(now_ts)
+
+    #             elif sensor_name == "Accel":
+    #                 x = sensor_data.get("X_g",0)
+    #                 y = sensor_data.get("Y_g",0)
+    #                 z = sensor_data.get("Z_g",0)
+    #                 step = sensor_data.get("step_rate",0)
+    #                 self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
+    #                 self.step_rate.append(step)
+
+    #             elif sensor_name == "Gyro":
+    #                 x = sensor_data.get("X_deg",0)
+    #                 y = sensor_data.get("Y_deg",0)
+    #                 z = sensor_data.get("Z_deg",0)
+    #                 rotate = sensor_data.get("rotation_rate",0)
+    #                 self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
+    #                 self.rotate_rate.append(rotate)
+
+    #             elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
+    #                 val = sensor_data["Celsius"]
+    #                 self.obj_temp.append(val)
+
+    #             elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
+    #                 val = sensor_data["Celsius"]
+    #                 self.amb_temp.append(val)
+
+    #             elif sensor_name == "Pressure" and "hPa" in sensor_data:
+    #                 val = sensor_data["hPa"]
+    #                 self.pressure.append(val)
+
+    #             elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
+    #                 val = sensor_data["SPO2"]
+    #                 self.update_blood_oxygen(val)
+
+    #             # 5) build the Mongo document
+    #             doc = {
+    #                 'sensor':          sensor_name,
+    #                 'astronaut_name':  self.astronaut_name,
+    #                 'astronaut_gender':self.astronaut_gender,
+    #                 'astronaut_age':   self.astronaut_age,
+    #                 'astronaut_weight':self.astronaut_weight,
+    #                 'timestamp':       now_ts,
+    #                 'activity_id':     self.current_activity
+    #             }
+    #             doc.update(sensor_data)
+
+    #             if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
+    #                 brpm = self.compute_breathing_rate(
+    #                     list(self.resp),
+    #                     list(self.timestamps)
+    #                 )
+    #                 if brpm is not None:
+    #                     doc['BRPM'] = brpm
+    #                     lbl = self.data_labels["RespiratoryRate"]["BRPM"]
+    #                     disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
+    #                     lbl.setText(f"{disp}: {brpm:.0f}")
+                        
+    #             self.on_new_sensor_data()
+
+    #             # 7) queue for Mongo
+    #             self.mongo_buffer.append(doc)
+
+    #         # 8) flush buffer and run prediction
+    #         self.flush_mongo_buffer()
+
+    #     except Exception as e:
+    #         logging.error(f"Error processing BLE data: {e}")    
+
     def handle_ble_data(self, data):
         try:
             now_ts = time.time()
 
-            # 2) flatten list→dict
+            # 2) flatten list → dict
             if isinstance(data, list):
                 merged = {}
                 for obj in data:
@@ -302,82 +409,92 @@ class AstronautMonitor(QMainWindow):
                 if not isinstance(sensor_data, dict):
                     continue
 
-                # update raw buffers & UI
-                if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
-                    val = sensor_data["Value_mV"]
-                    self.pulse.append(val)
+                # Safely update raw buffers & UI
+                try:
+                    if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
+                        val = sensor_data.get("Value_mV", 0)
+                        self.pulse.append(val)
 
-                elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
-                    val = sensor_data["avg_mV"]
-                    self.resp.append(val)
-                    self.timestamps.append(now_ts)
+                    elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
+                        val = sensor_data.get("avg_mV", 0)
+                        self.resp.append(val)
+                        self.timestamps.append(now_ts)
 
-                elif sensor_name == "Accel":
-                    x = sensor_data.get("X_g",0)
-                    y = sensor_data.get("Y_g",0)
-                    z = sensor_data.get("Z_g",0)
-                    step = sensor_data.get("step_rate",0)
-                    self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
-                    self.step_rate.append(step)
+                    elif sensor_name == "Accel":
+                        x = sensor_data.get("X_g", 0)
+                        y = sensor_data.get("Y_g", 0)
+                        z = sensor_data.get("Z_g", 0)
+                        step = sensor_data.get("step_rate", 0)
+                        self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
+                        self.step_rate.append(step)
 
-                elif sensor_name == "Gyro":
-                    x = sensor_data.get("X_deg",0)
-                    y = sensor_data.get("Y_deg",0)
-                    z = sensor_data.get("Z_deg",0)
-                    rotate = sensor_data.get("rotation_rate",0)
-                    self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
-                    self.rotate_rate.append(rotate)
+                    elif sensor_name == "Gyro":
+                        x = sensor_data.get("X_deg", 0)
+                        y = sensor_data.get("Y_deg", 0)
+                        z = sensor_data.get("Z_deg", 0)
+                        rotate = sensor_data.get("rotation_rate", 0)
+                        self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
+                        self.rotate_rate.append(rotate)
 
-                elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
-                    val = sensor_data["Celsius"]
-                    self.obj_temp.append(val)
+                    elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
+                        val = sensor_data.get("Celsius", 0)
+                        self.obj_temp.append(val)
 
-                elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
-                    val = sensor_data["Celsius"]
-                    self.amb_temp.append(val)
+                    elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
+                        val = sensor_data.get("Celsius", 0)
+                        self.amb_temp.append(val)
 
-                elif sensor_name == "Pressure" and "hPa" in sensor_data:
-                    val = sensor_data["hPa"]
-                    self.pressure.append(val)
+                    elif sensor_name == "Pressure" and "hPa" in sensor_data:
+                        val = sensor_data.get("hPa", 0)
+                        self.pressure.append(val)
 
-                elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
-                    val = sensor_data["SPO2"]
-                    self.update_blood_oxygen(val)
+                    elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
+                        val = sensor_data.get("SPO2", 0)
+                        self.update_blood_oxygen(val)
 
-                # 5) build the Mongo document
-                doc = {
-                    'sensor':          sensor_name,
-                    'astronaut_name':  self.astronaut_name,
-                    'astronaut_gender':self.astronaut_gender,
-                    'astronaut_age':   self.astronaut_age,
-                    'astronaut_weight':self.astronaut_weight,
-                    'timestamp':       now_ts,
-                    'activity_id':     self.current_activity
-                }
-                doc.update(sensor_data)
+                    # 5) build the Mongo document
+                    doc = self.create_mongo_doc(sensor_name, sensor_data, now_ts)
 
-                if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
-                    brpm = self.compute_breathing_rate(
-                        list(self.resp),
-                        list(self.timestamps)
-                    )
-                    if brpm is not None:
-                        doc['BRPM'] = brpm
-                        lbl = self.data_labels["RespiratoryRate"]["BRPM"]
-                        disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
-                        lbl.setText(f"{disp}: {brpm:.0f}")
+                    # 6) Handle specific sensor calculations (e.g., Breathing Rate for RespiratoryRate)
+                    if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
+                        brpm = self.compute_breathing_rate(
+                            list(self.resp),
+                            list(self.timestamps)
+                        )
                         
-                self.on_new_sensor_data()
+                        if brpm is not None:
+                            doc['BRPM'] = brpm
+                            lbl = self.data_labels["RespiratoryRate"]["BRPM"]
+                            disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
+                            lbl.setText(f"{disp}: {brpm:.0f}")
+                    
+                    # 7) queue for Mongo
+                    self.mongo_buffer.append(doc)
 
-                # 7) queue for Mongo
-                self.mongo_buffer.append(doc)
+                except Exception as e:
+                    logging.error(f"Error processing data for sensor {sensor_name}: {e}")
 
             # 8) flush buffer and run prediction
             self.flush_mongo_buffer()
 
         except Exception as e:
-            logging.error(f"Error processing BLE data: {e}")    
+            logging.error(f"Error processing BLE data: {e}")
+    def create_mongo_doc(self, sensor_name, sensor_data, now_ts):
+        """
+        Helper function to create a MongoDB document.
+        """
+        doc = {
+            'sensor': sensor_name,
+            'astronaut_name': self.astronaut_name,
+            'astronaut_gender': self.astronaut_gender,
+            'astronaut_age': self.astronaut_age,
+            'astronaut_weight': self.astronaut_weight,
+            'timestamp': now_ts,
+            'activity_id': self.current_activity
+        }
+        doc.update(sensor_data)  # Add specific sensor data
 
+        return doc
     def initUI(self):
         self.central_stack = QStackedWidget()
         self.setCentralWidget(self.central_stack)
@@ -433,25 +550,32 @@ class AstronautMonitor(QMainWindow):
         return sensor_box
     
     def compute_breathing_rate(self, resp_data, timestamps):
-        # align lengths
         resp_arr = np.asarray(resp_data)
         time_arr = np.asarray(timestamps)
+
         if resp_arr.size != time_arr.size:
             n = min(resp_arr.size, time_arr.size)
-            resp_arr  = resp_arr[-n:]
-            time_arr  = time_arr[-n:]
+            resp_arr = resp_arr[-n:]
+            time_arr = time_arr[-n:]
+
         if resp_arr.size < 2:
             return None
 
-        peaks, _    = find_peaks(resp_arr, height=0.1, distance=1)
-        peak_times  = time_arr[peaks]
-        if peak_times.size < 2:
+        # Detect peaks
+        peaks, _ = find_peaks(resp_arr, height=0.2, distance=1)
+        peak_times = time_arr[peaks]
+
+        if peak_times.size == 0:
             return None
 
-        intervals        = np.diff(peak_times)
-        avg_interval_sec = intervals.mean()
-        breathing_rate_bpm = 60 / avg_interval_sec
-        return int(breathing_rate_bpm)
+        # Only consider peaks within the last 60 seconds
+        latest_time = time_arr[-1]
+        mask = peak_times >= (latest_time - 60)
+        recent_peaks = peak_times[mask]
+
+        # Breathing rate = breaths per minute
+        breathing_rate_bpm = recent_peaks.size
+        return breathing_rate_bpm
         
     def init_home_page(self):
         layout = QGridLayout()
@@ -488,7 +612,7 @@ class AstronautMonitor(QMainWindow):
             },
             "Gyro": {
                 "display_name": "Rate of Arm Swings",
-                "measurements": {"rotation_rate": "Rotation Rate (steps/min)"},
+                "measurements": {"rotation_rate": "Rotation Rate (swings/min)"},
                 "grid_position": (2, 2)
             },
             "Pressure": {
@@ -755,70 +879,177 @@ class AstronautMonitor(QMainWindow):
             first_timestamp = self.timestamps[0]
             relative_timestamps = [t - first_timestamp for t in self.timestamps]
             relative_timestamps = np.array(relative_timestamps)
+        
+        try:
+            if self.current_chart_type == 'pulse':
+                if self.pulse_plot and self.pulse:
+                    pulse_np = np.array(self.pulse)
+                    n = min(len(relative_timestamps), len(pulse_np))
+                    self.pulse_plot.setData(relative_timestamps[:n], pulse_np[:n])
+                else:
+                    logging.warning("pulse_plot not initialized or no pulse data.")
 
-        if self.current_chart_type == 'pulse':
-            if self.pulse and self.timestamps:
-                pulse_np = np.array(self.pulse)
-                self.pulse_plot.setData(relative_timestamps, pulse_np)
+            elif self.current_chart_type == 'resp':
+                if self.resp_plot and self.resp:
+                    resp_np = np.array(self.resp)
+                    ts_np = np.array(self.timestamps)[:len(resp_np)]
+                    rel_ts = ts_np - ts_np[0]
 
-        elif self.current_chart_type == 'resp':
-           if self.resp and self.timestamps:
-                resp_np = np.array(self.resp)
-                ts_np = np.array(self.timestamps)[:len(resp_np)]
-                rel_ts = ts_np - ts_np[0]
+                    self.resp_plot.setData(rel_ts, resp_np)
 
-                self.resp_plot.setData(rel_ts, resp_np)
+                    # Compute breathing rate
+                    rate = self.compute_breathing_rate(resp_np, ts_np)
+                    if rate:
+                        self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
 
-                # Compute and display breathing rate
-                rate = self.compute_breathing_rate(resp_np, ts_np)
-                if rate:
-                    self.chart_widget.setTitle(f"Breathing Rate ({rate:.0f} bpm)")
+                    # Show peaks
+                    peaks, _ = find_peaks(resp_np, height=0.2, distance=1)
+                    peak_times = rel_ts[peaks]
 
-                # Detect peaks and show vertical linesfind_peaks(resp_data, height=0.1, distance=1)
-                peaks, _ = find_peaks(resp_np, height=0.1, distance=1)
-                peak_times = rel_ts[peaks]
+                    for line in self.peak_lines:
+                        self.chart_widget.removeItem(line)
+                    self.peak_lines.clear()
 
-                # Remove previous lines
-                for line in self.peak_lines:
-                    self.chart_widget.removeItem(line)
-                self.peak_lines.clear()
+                    for pt in peak_times:
+                        line = InfiniteLine(pos=pt, angle=90, pen=mkPen(color='b', style=Qt.DashLine))
+                        self.chart_widget.addItem(line)
+                        self.peak_lines.append(line)
+                else:
+                    logging.warning("resp_plot not initialized or no resp data.")
 
-                # Add new lines
-                for pt in peak_times:
-                    line = InfiniteLine(pos=pt, angle=90, pen=mkPen(color='b', style=Qt.DashLine))
-                    self.chart_widget.addItem(line)
-                    self.peak_lines.append(line)
+            elif self.current_chart_type == 'accel':
+                if all([self.accel_x_plot, self.accel_y_plot, self.accel_z_plot]) and self.accel_x:
+                    ax, ay, az = map(np.array, (self.accel_x, self.accel_y, self.accel_z))
+                    n = min(len(relative_timestamps), len(ax))
+                    self.accel_x_plot.setData(relative_timestamps[:n], ax[:n])
+                    self.accel_y_plot.setData(relative_timestamps[:n], ay[:n])
+                    self.accel_z_plot.setData(relative_timestamps[:n], az[:n])
 
-        elif self.current_chart_type == 'accel':
-            if self.accel_x and self.timestamps:
-                accel_x_np = np.array(self.accel_x)
-                accel_y_np = np.array(self.accel_y)
-                accel_z_np = np.array(self.accel_z)
-                self.accel_x_plot.setData(relative_timestamps[:len(accel_x_np)], accel_x_np)
-                self.accel_y_plot.setData(relative_timestamps[:len(accel_y_np)], accel_y_np)
-                self.accel_z_plot.setData(relative_timestamps[:len(accel_z_np)], accel_z_np)
+            elif self.current_chart_type == 'gyro':
+                if all([self.gyro_x_plot, self.gyro_y_plot, self.gyro_z_plot]) and self.gyro_x:
+                    gx, gy, gz = map(np.array, (self.gyro_x, self.gyro_y, self.gyro_z))
+                    n = min(len(relative_timestamps), len(gx))
+                    self.gyro_x_plot.setData(relative_timestamps[:n], gx[:n])
+                    self.gyro_y_plot.setData(relative_timestamps[:n], gy[:n])
+                    self.gyro_z_plot.setData(relative_timestamps[:n], gz[:n])
 
-        elif self.current_chart_type == 'gyro':
-            if self.gyro_x and self.timestamps:
-                gyro_x_np = np.array(self.gyro_x)
-                gyro_y_np = np.array(self.gyro_y)
-                gyro_z_np = np.array(self.gyro_z)
-                self.gyro_x_plot.setData(relative_timestamps[:len(gyro_x_np)], gyro_x_np)
-                self.gyro_y_plot.setData(relative_timestamps[:len(gyro_y_np)], gyro_y_np)
-                self.gyro_z_plot.setData(relative_timestamps[:len(gyro_z_np)], gyro_z_np)
+            elif self.current_chart_type == 'temp':
+                if self.obj_temp_plot and self.amb_temp_plot and self.obj_temp:
+                    obj_np = np.array(self.obj_temp)
+                    amb_np = np.array(self.amb_temp)
+                    n = min(len(relative_timestamps), len(obj_np))
+                    self.obj_temp_plot.setData(relative_timestamps[:n], obj_np[:n])
+                    self.amb_temp_plot.setData(relative_timestamps[:n], amb_np[:n])
 
-        elif self.current_chart_type == 'temp':
-            if self.obj_temp and self.timestamps:
-                obj_temp_np = np.array(self.obj_temp)
-                amb_temp_np = np.array(self.amb_temp)
-                self.obj_temp_plot.setData(relative_timestamps[:len(obj_temp_np)], obj_temp_np)
-                self.amb_temp_plot.setData(relative_timestamps[:len(amb_temp_np)], amb_temp_np)
+            elif self.current_chart_type == 'pressure':
+                if self.pressure_plot and self.pressure:
+                    pressure_np = np.array(self.pressure)
+                    n = min(len(relative_timestamps), len(pressure_np))
+                    self.pressure_plot.setData(relative_timestamps[:n], pressure_np[:n])
+
+        except Exception as e:
+            logging.error(f"Error updating {self.current_chart_type} chart: {e}")
+        # if self.current_chart_type == 'pulse':
+        #     if self.pulse and self.timestamps:
+        #         pulse_np = np.array(self.pulse)
+        #         self.pulse_plot.setData(relative_timestamps, pulse_np)
+
+        # elif self.current_chart_type == 'resp':
+        #    if self.resp and self.timestamps:
+        #         resp_np = np.array(self.resp)
+        #         ts_np = np.array(self.timestamps)[:len(resp_np)]
+        #         rel_ts = ts_np - ts_np[0]
+
+        #         self.resp_plot.setData(rel_ts, resp_np)
+
+        #         # Compute and display breathing rate
+        #         rate = self.compute_breathing_rate(resp_np, ts_np)
+        #         if rate:
+        #             self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
+
+        #         # Detect peaks and show vertical linesfind_peaks(resp_data, height=0.1, distance=1)
+        #         peaks, _ = find_peaks(resp_np, height=0.2, distance=1)
+        #         peak_times = rel_ts[peaks]
+
+        #         # Remove previous lines
+        #         for line in self.peak_lines:
+        #             self.chart_widget.removeItem(line)
+        #         self.peak_lines.clear()
+
+        #         # Add new lines
+        #         for pt in peak_times:
+        #             line = InfiniteLine(pos=pt, angle=90, pen=mkPen(color='b', style=Qt.DashLine))
+        #             self.chart_widget.addItem(line)
+        #             self.peak_lines.append(line)
+
+        # elif self.current_chart_type == 'accel':
+        #     if self.accel_x and self.timestamps:
+        #         accel_x_np = np.array(self.accel_x)
+        #         accel_y_np = np.array(self.accel_y)
+        #         accel_z_np = np.array(self.accel_z)
+        #         n = min(len(relative_timestamps), len(accel_x_np))
+        #         self.accel_x_plot.setData(relative_timestamps[:n], accel_x_np[:n])
+        #         self.accel_y_plot.setData(relative_timestamps[:n], accel_y_np[:n])
+        #         self.accel_z_plot.setData(relative_timestamps[:n], accel_z_np[:n])
+        #         # accel_x_np = np.array(self.accel_x)
+        #         # accel_y_np = np.array(self.accel_y)
+        #         # accel_z_np = np.array(self.accel_z)
+        #         # self.accel_x_plot.setData(relative_timestamps[:len(accel_x_np)], accel_x_np)
+        #         # self.accel_y_plot.setData(relative_timestamps[:len(accel_y_np)], accel_y_np)
+        #         # self.accel_z_plot.setData(relative_timestamps[:len(accel_z_np)], accel_z_np)
+
+        # elif self.current_chart_type == 'gyro':
+        #     if self.gyro_x and self.timestamps:
+        #         gyro_x_np = np.array(self.gyro_x)
+        #         gyro_y_np = np.array(self.gyro_y)
+        #         gyro_z_np = np.array(self.gyro_z)
+        #         n = min(len(relative_timestamps), len(gyro_x_np))
+        #         self.gyro_x_plot.setData(relative_timestamps[:n], gyro_x_np[:n])
+        #         self.gyro_y_plot.setData(relative_timestamps[:n], gyro_y_np[:n])
+        #         self.gyro_z_plot.setData(relative_timestamps[:n], gyro_z_np[:n])
+        #         # gyro_x_np = np.array(self.gyro_x)
+        #         # gyro_y_np = np.array(self.gyro_y)
+        #         # gyro_z_np = np.array(self.gyro_z)
+        #         # self.gyro_x_plot.setData(relative_timestamps[:len(gyro_x_np)], gyro_x_np)
+        #         # self.gyro_y_plot.setData(relative_timestamps[:len(gyro_y_np)], gyro_y_np)
+        #         # self.gyro_z_plot.setData(relative_timestamps[:len(gyro_z_np)], gyro_z_np)
+
+        # elif self.current_chart_type == 'temp':
+        #     if self.obj_temp and self.timestamps:
+        #         obj_temp_np = np.array(self.obj_temp)
+        #         amb_temp_np = np.array(self.amb_temp)
+        #         n = min(len(relative_timestamps), len(obj_temp_np))
+        #         self.obj_temp_plot.setData(relative_timestamps[:n], obj_temp_np[:n])
+        #         self.amb_temp_plot.setData(relative_timestamps[:n], amb_temp_np[:n])
+        #         # obj_temp_np = np.array(self.obj_temp)
+        #         # amb_temp_np = np.array(self.amb_temp)
+        #         # self.obj_temp_plot.setData(relative_timestamps[:len(obj_temp_np)], obj_temp_np)
+        #         # self.amb_temp_plot.setData(relative_timestamps[:len(amb_temp_np)], amb_temp_np)
                 
-        elif self.current_chart_type == 'pressure':
-            if self.pressure and self.timestamps:
-                pressure_np = np.array(self.pressure)
-                self.pressure_plot.setData(relative_timestamps[:len(pressure_np)], pressure_np)
-                
+        # elif self.current_chart_type == 'pressure':
+        #     if self.pressure and self.timestamps:
+        #         # pressure_np = np.array(self.pressure)
+        #         # self.pressure_plot.setData(relative_timestamps[:len(pressure_np)], pressure_np)
+        #         pressure_np = np.array(self.pressure)
+        #         n = min(len(relative_timestamps), len(pressure_np))
+        #         self.pressure_plot.setData(relative_timestamps[:n], pressure_np[:n])
+    def update_connection_status(self, connected: bool):
+        if connected:
+            self.status_label.setText("Status: Connected")
+            self.status_label.setStyleSheet("color: green; font-weight: bold;font-size: 30px;")
+        else:
+            self.status_label.setText("Status: Disconnected")
+            self.status_label.setStyleSheet("color: red; font-weight: bold;font-size: 30px;")
+
+    def toggle_upload_to_mongo(self):
+        if self.upload_toggle.isChecked():
+            self.upload_toggle.setText("Upload to MongoDB: ON")
+            self.mongo_upload_enabled = True
+        else:
+            self.upload_toggle.setText("Upload to MongoDB: OFF")
+            self.mongo_upload_enabled = False
+
+
     def refresh_monitoring_page(self):
         """Refresh the monitoring page by resetting the Bluetooth connection."""
         logging.info("Resetting Bluetooth connection...")
@@ -880,6 +1111,19 @@ class AstronautMonitor(QMainWindow):
         navbar.setMovable(False)
         navbar.addWidget(navbar_widget)
         self.addToolBar(navbar)
+
+        self.status_label = QLabel("Status: Disconnected")
+        self.status_label.setObjectName("statusLabel")
+        self.status_label.setStyleSheet("color: red; font-weight: bold; font-size: 30px;")
+        navbar_layout.addWidget(self.status_label)
+
+        self.upload_toggle = QPushButton("Upload to MongoDB: OFF")
+        self.upload_toggle.setCheckable(True)
+        self.upload_toggle.setChecked(False)
+        self.upload_toggle.setObjectName("navButton")
+        self.upload_toggle.clicked.connect(self.toggle_upload_to_mongo)
+        right_layout.addWidget(self.upload_toggle)
+
 
     def closeEvent(self, event):
         self.ble_worker.stop()
