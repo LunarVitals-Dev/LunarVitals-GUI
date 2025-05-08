@@ -1,18 +1,18 @@
 /* General Styles */
 * {
-    font-family: 'Segoe UI', sans-serif;
+    font-family: 'Nasalization';
     font-size: 18px;
     color: white; 
 }
 
 /* Main Window */
 QMainWindow {
-    background-color: white;
+    background-color:#547792 ;
 }
 
 /* Toolbar/Navbar */
 QToolBar {
-    background-color: black;
+    background-color: #213448;
     border: none;
     height: 60px;
     padding: 0 20px;
@@ -23,7 +23,7 @@ QPushButton#navButton {
     qproperty-flat: true;      /* sets setFlat(true) via QSS */
     background: transparent;    /* no fill */
     border: none;               /* no border */
-    color: white;               /* white text */
+    color: #94B4C1;               /* white text */
     padding: 8px 16px;          /* optional spacing */
     font-size: 22px;
     font-weight: bold;
@@ -42,7 +42,7 @@ QPushButton#navButton:hover {
 
 /* Headers */
 #pageHeader {
-    color: #062a61;
+    color: white;
     font-size: 50px;
     font-weight: bold;
     margin: 20px 0;
@@ -52,14 +52,14 @@ QPushButton#navButton:hover {
 }
 
 #subHeader {
-    color: #062a61;
+    color: white;
     font-size: 18px;
     font-weight: bold;
 }
 
 /* Combo Box Styling */
 QComboBox {
-    color: black;
+    color: #213448;
     font-size: 18px;
     background-color: white;
     border: 1px solid gray;
@@ -67,7 +67,7 @@ QComboBox {
 }
 
 QComboBox QAbstractItemView {
-    color: black;
+    color: white;
     background-color: white;
     selection-background-color: lightblue;
     selection-color: black;
@@ -75,7 +75,7 @@ QComboBox QAbstractItemView {
 
 /* Button Styling */
 QPushButton {
-    background-color: #FF5733;
+    background-color: #213448;
     border-radius: 10px;
     font-size: 16px;
     color: white;
@@ -84,28 +84,30 @@ QPushButton {
 }
 
 QPushButton:hover {
-    background-color: #D94E2F;
+    background-color: #547792;
 }
 
 /* Legend for Chart */
 .pg-legend {
-    background-color: #062a61;
+    background-color: #213448;
     border: 1px solid #ccc;
     font-size: 16px;
 }
 
 /* --- Styles for Data Page --- */
 #dataPage QLabel {
+    color: #213448;
     font-weight: bold;
-    font-size: 18px;
+    font-size: 58px;
     padding: 2px;
+    
 }
 
 /* Sensor Box Styling - Now Visible */
 .sensor-box {
     font-weight: bold;
-    background-color: #f5f7fa; /* Light gray background */
-    border: 2px solid #4a90e2; /* Blue border */
+    background-color: #94B4C1; /* Light gray background */
+    border: 0px solid white; /* Blue border */
     border-radius: 10px; /* Rounded corners */
     padding: 15px;
     margin: 10px;
@@ -117,16 +119,19 @@ QPushButton:hover {
 
 /* Sensor Values */
 .sensor-value {
-    font-size: 18px;
-    font-weight: bold;
-    color: #333;
+    font-size: 24px;
+    font-weight: light;
+    color: #213448;
+    qproperty-alignment: 'AlignCenter';
 }
 
 /* Center Image */
 #centerImage {
-    border: 2px solid #4a90e2;
-    background-color: white;
+    border: 0px solid #4a90e2;
+    background-color: #213448;
     border-radius: 10px;
+    padding: 15px;
+    margin: 10px;
 }
 
 /* Grid Layout Spacing */
@@ -137,13 +142,13 @@ QGridLayout {
 
 /* --- Intro Page Styling --- */
 #introPage {
-    background-color: white;
+    background-color: #547792;
 }
 
 /* Form Container */
 #introForm {
-    background-color: #f5f7fa;  /* Light gray background */
-    border: 2px solid #4a90e2;  /* Blue border */
+    background-color: #547792;  /* Light gray background */
+    border: 0px solid white;  /* Blue border */
     border-radius: 12px;
     padding: 25px;
     min-width: 500px;
@@ -158,7 +163,7 @@ QGridLayout {
     text-align: center;
     margin-top: 30px;
     margin-bottom: 30px;
-    color: #062a61;
+    color: white;
 }
 
 /* Form Labels */
@@ -166,7 +171,7 @@ QGridLayout {
     font-size: 24px;
     margin-top: 20px;
     margin-bottom: 20px;
-    color: #062a61;
+    color: white1;
 }
 
 /* Input Fields */
@@ -185,7 +190,7 @@ QGridLayout {
 
 /* Submit Button */
 #submitButton {
-    background-color: #FF5733;
+    background-color: #213448;
     font-size: 18px;
     color: white;
     border: none;
@@ -198,18 +203,18 @@ QGridLayout {
 }
 
 #submitButton:hover {
-    background-color: #D94E2F;
+    background-color: #547792;
 }
 
 #aboutPage {
-    background-color: white; /* White background for consistency */
+    background-color: #547792; /* White background for consistency */
     padding: 10px; /* Add padding around the content */
 }
 
 #aboutTitle {
     font-size: 36px;
     font-weight: bold;
-    color: #062a61; /* Dark blue color for the title */
+    color: #213448; /* Dark blue color for the title */
     text-align: center;
 }
 
@@ -224,14 +229,14 @@ QGridLayout {
 }
 
 #activityLabel {
-    color: #062a61;           
+    color: white;           
     font-size: 20px;        
     font-weight: bold;
     background-color: transparent;
 }
 
 #bloodOxygenLabel {
-    color: #062a61;          
+    color: white;          
     font-size: 20px;         
     font-weight: bold;
     background-color: transparent;

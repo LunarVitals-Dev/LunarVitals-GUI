@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame,
     QFormLayout, QLineEdit
 )
-
+from PySide6.QtGui import QFontDatabase, QFont 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QPixmap, QFont, QIntValidator
 import time
@@ -150,7 +150,7 @@ class AstronautMonitor(QMainWindow):
         
         load_dotenv()
         
-        MONGODB_URI = 
+        MONGODB_URI = "mongodb+srv://LunarVitals:lunarvitals1010@peakfitness.i5blp.mongodb.net/"
         # print(f"MONGODB_URI: {MONGODB_URI}")
 
         try:
@@ -162,8 +162,8 @@ class AstronautMonitor(QMainWindow):
             sys.exit(1)
 
         self.chart_style = {
-            'background': 'white',
-            'foreground': '#062a61',
+            'background': '#dce6eb',
+            'foreground': 'white',
             'title_size': '20pt',
             'title_color': '#062a61',
             'axis_color': '#062a61',
@@ -560,9 +560,9 @@ class AstronautMonitor(QMainWindow):
 
         if resp_arr.size < 2:
             return None
-
+        
         # Detect peaks
-        peaks, _ = find_peaks(resp_arr, height=0.2, distance=1)
+        peaks, _ = find_peaks(resp_arr, height=1800, prominence=10, distance = 1)
         peak_times = time_arr[peaks]
 
         if peak_times.size == 0:
@@ -644,7 +644,7 @@ class AstronautMonitor(QMainWindow):
         center_image.setAlignment(Qt.AlignCenter)
         pixmap = QPixmap('assets/spaceman.png')
         scaled = pixmap.scaled(
-            230, 410,
+            700, 700,
             Qt.KeepAspectRatio,
             Qt.SmoothTransformation
         )
@@ -745,6 +745,7 @@ class AstronautMonitor(QMainWindow):
         layout.addWidget(buttons_widget)
 
         self.chart_widget = pg.PlotWidget()
+        
         self.setup_chart(self.chart_widget, "Sensor Data")
         layout.addWidget(self.chart_widget)
         self.data_page.setLayout(layout)
@@ -756,7 +757,12 @@ class AstronautMonitor(QMainWindow):
         about_label.setObjectName("aboutTitle")
         about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(about_label)
-
+             # Image
+        image_label = QLabel()
+        pixmap = QPixmap("assets/group.png")
+        image_label.setPixmap(pixmap.scaledToWidth(900, Qt.SmoothTransformation))
+        image_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(image_label)
         about_text = QLabel("Lunar extravehicular activities (EVAs) are long missions that require astronauts to perform various tasks under extreme conditions with limited consumables. To combat the safety risk of over-depleting critical resources, we created a wearable biomonitoring system that measures, analyzes, and predicts physiological signals: including heart rate, respiration rate, body temperature, and step count. These signals are collected by a suite of sensors, which collects the data, filters it, and transmits it via Bluetooth to a database, where it is displayed here. Our solution aims to improve mission safety and efficiency and serve as a foundation for support in human space exploration.")
         about_text.setObjectName("aboutText")
         about_text.setWordWrap(True)  # Enable word wrapping
@@ -784,6 +790,7 @@ class AstronautMonitor(QMainWindow):
 
         # add a legend in the top‐right corner
         self.legend = plot_item.addLegend(offset=(10,10))
+        chart_widget.setBackground(self.chart_style['background'])
         return chart_widget
 
     def update_chart(self, sensor_type):
@@ -840,6 +847,8 @@ class AstronautMonitor(QMainWindow):
 
         # (re)apply styling + legend
         self.setup_chart(self.chart_widget, title)
+        self.chart_widget.setBackground(self.chart_style['background'])
+  
         plot_item = self.chart_widget.getPlotItem()
         plot_item.setLabel('bottom', 'Time', units='s')
         plot_item.setLabel('left',   left,   units=units)
@@ -903,7 +912,7 @@ class AstronautMonitor(QMainWindow):
                         self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
 
                     # Show peaks
-                    peaks, _ = find_peaks(resp_np, height=0.2, distance=1)
+                    peaks, _ = find_peaks(resp_np, height=1800, prominence=10, distance = 1)
                     peak_times = rel_ts[peaks]
 
                     for line in self.peak_lines:
@@ -949,97 +958,14 @@ class AstronautMonitor(QMainWindow):
 
         except Exception as e:
             logging.error(f"Error updating {self.current_chart_type} chart: {e}")
-        # if self.current_chart_type == 'pulse':
-        #     if self.pulse and self.timestamps:
-        #         pulse_np = np.array(self.pulse)
-        #         self.pulse_plot.setData(relative_timestamps, pulse_np)
 
-        # elif self.current_chart_type == 'resp':
-        #    if self.resp and self.timestamps:
-        #         resp_np = np.array(self.resp)
-        #         ts_np = np.array(self.timestamps)[:len(resp_np)]
-        #         rel_ts = ts_np - ts_np[0]
-
-        #         self.resp_plot.setData(rel_ts, resp_np)
-
-        #         # Compute and display breathing rate
-        #         rate = self.compute_breathing_rate(resp_np, ts_np)
-        #         if rate:
-        #             self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
-
-        #         # Detect peaks and show vertical linesfind_peaks(resp_data, height=0.1, distance=1)
-        #         peaks, _ = find_peaks(resp_np, height=0.2, distance=1)
-        #         peak_times = rel_ts[peaks]
-
-        #         # Remove previous lines
-        #         for line in self.peak_lines:
-        #             self.chart_widget.removeItem(line)
-        #         self.peak_lines.clear()
-
-        #         # Add new lines
-        #         for pt in peak_times:
-        #             line = InfiniteLine(pos=pt, angle=90, pen=mkPen(color='b', style=Qt.DashLine))
-        #             self.chart_widget.addItem(line)
-        #             self.peak_lines.append(line)
-
-        # elif self.current_chart_type == 'accel':
-        #     if self.accel_x and self.timestamps:
-        #         accel_x_np = np.array(self.accel_x)
-        #         accel_y_np = np.array(self.accel_y)
-        #         accel_z_np = np.array(self.accel_z)
-        #         n = min(len(relative_timestamps), len(accel_x_np))
-        #         self.accel_x_plot.setData(relative_timestamps[:n], accel_x_np[:n])
-        #         self.accel_y_plot.setData(relative_timestamps[:n], accel_y_np[:n])
-        #         self.accel_z_plot.setData(relative_timestamps[:n], accel_z_np[:n])
-        #         # accel_x_np = np.array(self.accel_x)
-        #         # accel_y_np = np.array(self.accel_y)
-        #         # accel_z_np = np.array(self.accel_z)
-        #         # self.accel_x_plot.setData(relative_timestamps[:len(accel_x_np)], accel_x_np)
-        #         # self.accel_y_plot.setData(relative_timestamps[:len(accel_y_np)], accel_y_np)
-        #         # self.accel_z_plot.setData(relative_timestamps[:len(accel_z_np)], accel_z_np)
-
-        # elif self.current_chart_type == 'gyro':
-        #     if self.gyro_x and self.timestamps:
-        #         gyro_x_np = np.array(self.gyro_x)
-        #         gyro_y_np = np.array(self.gyro_y)
-        #         gyro_z_np = np.array(self.gyro_z)
-        #         n = min(len(relative_timestamps), len(gyro_x_np))
-        #         self.gyro_x_plot.setData(relative_timestamps[:n], gyro_x_np[:n])
-        #         self.gyro_y_plot.setData(relative_timestamps[:n], gyro_y_np[:n])
-        #         self.gyro_z_plot.setData(relative_timestamps[:n], gyro_z_np[:n])
-        #         # gyro_x_np = np.array(self.gyro_x)
-        #         # gyro_y_np = np.array(self.gyro_y)
-        #         # gyro_z_np = np.array(self.gyro_z)
-        #         # self.gyro_x_plot.setData(relative_timestamps[:len(gyro_x_np)], gyro_x_np)
-        #         # self.gyro_y_plot.setData(relative_timestamps[:len(gyro_y_np)], gyro_y_np)
-        #         # self.gyro_z_plot.setData(relative_timestamps[:len(gyro_z_np)], gyro_z_np)
-
-        # elif self.current_chart_type == 'temp':
-        #     if self.obj_temp and self.timestamps:
-        #         obj_temp_np = np.array(self.obj_temp)
-        #         amb_temp_np = np.array(self.amb_temp)
-        #         n = min(len(relative_timestamps), len(obj_temp_np))
-        #         self.obj_temp_plot.setData(relative_timestamps[:n], obj_temp_np[:n])
-        #         self.amb_temp_plot.setData(relative_timestamps[:n], amb_temp_np[:n])
-        #         # obj_temp_np = np.array(self.obj_temp)
-        #         # amb_temp_np = np.array(self.amb_temp)
-        #         # self.obj_temp_plot.setData(relative_timestamps[:len(obj_temp_np)], obj_temp_np)
-        #         # self.amb_temp_plot.setData(relative_timestamps[:len(amb_temp_np)], amb_temp_np)
-                
-        # elif self.current_chart_type == 'pressure':
-        #     if self.pressure and self.timestamps:
-        #         # pressure_np = np.array(self.pressure)
-        #         # self.pressure_plot.setData(relative_timestamps[:len(pressure_np)], pressure_np)
-        #         pressure_np = np.array(self.pressure)
-        #         n = min(len(relative_timestamps), len(pressure_np))
-        #         self.pressure_plot.setData(relative_timestamps[:n], pressure_np[:n])
     def update_connection_status(self, connected: bool):
         if connected:
             self.status_label.setText("Status: Connected")
-            self.status_label.setStyleSheet("color: green; font-weight: bold;font-size: 30px;")
+            self.status_label.setStyleSheet("color: white; font-weight: bold;font-size: 30px;")
         else:
             self.status_label.setText("Status: Disconnected")
-            self.status_label.setStyleSheet("color: red; font-weight: bold;font-size: 30px;")
+            self.status_label.setStyleSheet("color: #A25772; font-weight: bold;font-size: 30px;")
 
     def toggle_upload_to_mongo(self):
         if self.upload_toggle.isChecked():
@@ -1076,8 +1002,8 @@ class AstronautMonitor(QMainWindow):
         navbar_layout.setContentsMargins(0, 0, 0, 0) 
         
         self.logo_label = QLabel()
-        pixmap = QPixmap("assets/lunarlogo.png")
-        pixmap = pixmap.scaled(250, 90, Qt.KeepAspectRatio)
+        pixmap = QPixmap("assets/lunarlogoLong.png")
+        pixmap = pixmap.scaled(400, 200, Qt.KeepAspectRatio)
         self.logo_label.setPixmap(pixmap)
 
         right_buttons = QWidget()
@@ -1114,7 +1040,7 @@ class AstronautMonitor(QMainWindow):
 
         self.status_label = QLabel("Status: Disconnected")
         self.status_label.setObjectName("statusLabel")
-        self.status_label.setStyleSheet("color: red; font-weight: bold; font-size: 30px;")
+        self.status_label.setStyleSheet("color: #A25772; font-weight: bold; font-size: 30px;")
         navbar_layout.addWidget(self.status_label)
 
         self.upload_toggle = QPushButton("Upload to MongoDB: OFF")
@@ -1144,21 +1070,34 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Astronaut Health Monitor")
         
-        self.resize(1280, 800)
+       # self.resize(1280, 800)
 
     def start_monitoring(self, name, gender, age, weight):
         self.monitoring_page = AstronautMonitor(name, gender, age, weight)
         self.stack.addWidget(self.monitoring_page)
         self.stack.setCurrentWidget(self.monitoring_page)
         
-        self.resize(1280, 800)
+        #self.resize(1280, 800)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.showNormal()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    font_path = r"assets\Nasalization.otf"
+    font_id = QFontDatabase.addApplicationFont(font_path)
+
+    if font_id != -1:
+        font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
+        app.setFont(QFont(font_family))
+    else:
+      print("Failed to load font.")
     with open('stylesheet.qss', 'r') as file:
         app.setStyleSheet(file.read())
 
     window = MainWindow()
-    window.show()
+    #window.show()
+    window.showFullScreen()
 
     sys.exit(app.exec())
