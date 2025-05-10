@@ -7,7 +7,6 @@ from PySide6.QtGui import QFontDatabase, QFont
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
 from PySide6.QtGui import QPixmap, QFont, QIntValidator
 import time
-from dotenv import load_dotenv
 import pyqtgraph as pg
 from pyqtgraph import mkPen
 from collections import deque
@@ -36,7 +35,7 @@ class MLManager(QObject):
             model = tf.keras.models.load_model("activity_model_mongodb.keras")
             scaler = joblib.load("feature_scaler_mongodb.joblib")
             encoder = joblib.load("activity_encoder_mongodb.joblib")
-            # print("Loaded trained model and preprocessing objects.")
+            print("Loaded trained model and preprocessing objects.")
             # Emit the loaded artifacts
             self.artifacts_ready.emit(model, scaler, encoder)
         except Exception as e:
@@ -146,12 +145,9 @@ class AstronautMonitor(QMainWindow):
         self.scaler = None
         self.encoder = None
         
-        self.current_activity = "No Activity"
-        
-        load_dotenv()
-        
+        self.current_activity = "Idle"
+
         MONGODB_URI = "mongodb+srv://LunarVitals:lunarvitals1010@peakfitness.i5blp.mongodb.net/"
-        # print(f"MONGODB_URI: {MONGODB_URI}")
 
         try:
             self.client = MongoClient(MONGODB_URI)
@@ -162,12 +158,10 @@ class AstronautMonitor(QMainWindow):
             sys.exit(1)
 
         self.chart_style = {
-            'background': '#dce6eb',
-            'foreground': 'white',
-            'title_size': '20pt',
+            'background': '#c8dae3',
+            'title_size': '22px',
             'title_color': '#062a61',
             'axis_color': '#062a61',
-            'grid_color': 'e0e0e0'
         }
 
         self.init_data_buffers()
@@ -190,6 +184,10 @@ class AstronautMonitor(QMainWindow):
         self.update_timer.timeout.connect(self.update_home_page)
         self.update_timer.timeout.connect(self.update_current_chart)
         self.update_timer.start(1000)
+        
+        self.prediction_timer = QTimer(self)
+        self.prediction_timer.timeout.connect(self.on_new_sensor_data)
+        self.prediction_timer.start(10000) 
 
         self.current_chart_type = None
 
@@ -209,9 +207,9 @@ class AstronautMonitor(QMainWindow):
         self.ble_worker.data_received.connect(self.handle_ble_data)
         self.ble_worker.start()
 
-        self.update_timer = QTimer(self)
-        self.update_timer.timeout.connect(lambda: self.update_connection_status(self.ble_worker.is_connected()))
-        self.update_timer.start(1000)  # check every 1 second
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(lambda: self.update_connection_status(self.ble_worker.is_connected()))
+        self.status_timer.start(2000)  # check every 2 second
 
     def init_data_buffers(self):
         self.maxlen = 100
@@ -230,6 +228,8 @@ class AstronautMonitor(QMainWindow):
         self.pressure = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
         self.spo2_buffer = deque(maxlen=5)
+        self.brpm = deque(maxlen=self.maxlen)
+        self.pulse_BPM = deque(maxlen=self.maxlen)
         
     def flush_mongo_buffer(self):
         if not self.mongo_upload_enabled:
@@ -269,124 +269,23 @@ class AstronautMonitor(QMainWindow):
         self.activity_label.setText(f"Current Activity: {prediction}")
         
     def on_new_sensor_data(self):
-        now = time.time()
 
-        if self.pulse and self.resp and self.obj_temp and self.step_rate and self.rotate_rate and (now - self.last_prediction) >= 10:
-            self.last_prediction = now
+        # compute the 10‑s averages
+        avg_bpm  = np.mean(self.pulse_BPM)
+        avg_brpm = np.mean(self.brpm)
+        body_temp = np.mean(self.obj_temp)
+        step_rate = np.mean(self.step_rate)
+        rotate_rate = np.mean(self.rotate_rate)
 
-            # compute the 10‑s averages
-            avg_bpm  = np.mean(self.pulse)
-            avg_brpm = np.mean(self.resp)
-            body_temp = np.mean(self.obj_temp)
-            step_rate = np.mean(self.step_rate)
-            rotate_rate = np.mean(self.rotate_rate)
+        # scale, predict, decode
+        X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
+        X_scaled = self.scaler.transform(X_new)
+        probs    = self.model.predict(X_scaled)
+        idx      = np.argmax(probs, axis=1)[0]
+        label    = self.encoder.categories_[0][idx]
 
-            # scale, predict, decode
-            X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
-            X_scaled = self.scaler.transform(X_new)
-            probs    = self.model.predict(X_scaled)
-            idx      = np.argmax(probs, axis=1)[0]
-            label    = self.encoder.categories_[0][idx]
-
-            # update the UI
-            self.update_prediction_display(label)
-            
-    # def handle_ble_data(self, data):
-    #     try:
-    #         now_ts = time.time()
-
-    #         # 2) flatten list→dict
-    #         if isinstance(data, list):
-    #             merged = {}
-    #             for obj in data:
-    #                 merged.update(obj)
-    #             data = merged
-
-    #         # 3) update latest_data cache
-    #         if not hasattr(self, 'latest_data'):
-    #             self.latest_data = {}
-    #         self.latest_data.update(data)
-
-    #         # 4) for each sensor, update buffers, UI, and build one Mongo doc
-    #         for sensor_name, sensor_data in data.items():
-    #             if not isinstance(sensor_data, dict):
-    #                 continue
-
-    #             # update raw buffers & UI
-    #             if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
-    #                 val = sensor_data["Value_mV"]
-    #                 self.pulse.append(val)
-
-    #             elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
-    #                 val = sensor_data["avg_mV"]
-    #                 self.resp.append(val)
-    #                 self.timestamps.append(now_ts)
-
-    #             elif sensor_name == "Accel":
-    #                 x = sensor_data.get("X_g",0)
-    #                 y = sensor_data.get("Y_g",0)
-    #                 z = sensor_data.get("Z_g",0)
-    #                 step = sensor_data.get("step_rate",0)
-    #                 self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
-    #                 self.step_rate.append(step)
-
-    #             elif sensor_name == "Gyro":
-    #                 x = sensor_data.get("X_deg",0)
-    #                 y = sensor_data.get("Y_deg",0)
-    #                 z = sensor_data.get("Z_deg",0)
-    #                 rotate = sensor_data.get("rotation_rate",0)
-    #                 self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
-    #                 self.rotate_rate.append(rotate)
-
-    #             elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
-    #                 val = sensor_data["Celsius"]
-    #                 self.obj_temp.append(val)
-
-    #             elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
-    #                 val = sensor_data["Celsius"]
-    #                 self.amb_temp.append(val)
-
-    #             elif sensor_name == "Pressure" and "hPa" in sensor_data:
-    #                 val = sensor_data["hPa"]
-    #                 self.pressure.append(val)
-
-    #             elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
-    #                 val = sensor_data["SPO2"]
-    #                 self.update_blood_oxygen(val)
-
-    #             # 5) build the Mongo document
-    #             doc = {
-    #                 'sensor':          sensor_name,
-    #                 'astronaut_name':  self.astronaut_name,
-    #                 'astronaut_gender':self.astronaut_gender,
-    #                 'astronaut_age':   self.astronaut_age,
-    #                 'astronaut_weight':self.astronaut_weight,
-    #                 'timestamp':       now_ts,
-    #                 'activity_id':     self.current_activity
-    #             }
-    #             doc.update(sensor_data)
-
-    #             if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
-    #                 brpm = self.compute_breathing_rate(
-    #                     list(self.resp),
-    #                     list(self.timestamps)
-    #                 )
-    #                 if brpm is not None:
-    #                     doc['BRPM'] = brpm
-    #                     lbl = self.data_labels["RespiratoryRate"]["BRPM"]
-    #                     disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
-    #                     lbl.setText(f"{disp}: {brpm:.0f}")
-                        
-    #             self.on_new_sensor_data()
-
-    #             # 7) queue for Mongo
-    #             self.mongo_buffer.append(doc)
-
-    #         # 8) flush buffer and run prediction
-    #         self.flush_mongo_buffer()
-
-    #     except Exception as e:
-    #         logging.error(f"Error processing BLE data: {e}")    
+        # update the UI
+        self.update_prediction_display(label)   
 
     def handle_ble_data(self, data):
         try:
@@ -413,6 +312,8 @@ class AstronautMonitor(QMainWindow):
                 try:
                     if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
                         val = sensor_data.get("Value_mV", 0)
+                        pulse = sensor_data.get("pulse_BPM", 0)
+                        self.pulse_BPM.append(pulse)
                         self.pulse.append(val)
 
                     elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
@@ -457,16 +358,16 @@ class AstronautMonitor(QMainWindow):
 
                     # 6) Handle specific sensor calculations (e.g., Breathing Rate for RespiratoryRate)
                     if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
-                        brpm = self.compute_breathing_rate(
+                        self.brpm = self.compute_breathing_rate(
                             list(self.resp),
                             list(self.timestamps)
                         )
                         
-                        if brpm is not None:
-                            doc['BRPM'] = brpm
+                        if self.brpm is not None:
+                            doc['BRPM'] = self.brpm
                             lbl = self.data_labels["RespiratoryRate"]["BRPM"]
                             disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
-                            lbl.setText(f"{disp}: {brpm:.0f}")
+                            lbl.setText(f"{disp}: {self.brpm:.0f}")
                     
                     # 7) queue for Mongo
                     self.mongo_buffer.append(doc)
@@ -479,6 +380,7 @@ class AstronautMonitor(QMainWindow):
 
         except Exception as e:
             logging.error(f"Error processing BLE data: {e}")
+            
     def create_mongo_doc(self, sensor_name, sensor_data, now_ts):
         """
         Helper function to create a MongoDB document.
@@ -559,14 +461,14 @@ class AstronautMonitor(QMainWindow):
             time_arr = time_arr[-n:]
 
         if resp_arr.size < 2:
-            return None
+            return 0
         
         # Detect peaks
-        peaks, _ = find_peaks(resp_arr, height=1800, prominence=10, distance = 1)
+        peaks, _ = find_peaks(resp_arr, height=1200, prominence=10, distance = 1) #1600 - Allan
         peak_times = time_arr[peaks]
 
         if peak_times.size == 0:
-            return None
+            return 0
 
         # Only consider peaks within the last 60 seconds
         latest_time = time_arr[-1]
@@ -644,7 +546,7 @@ class AstronautMonitor(QMainWindow):
         center_image.setAlignment(Qt.AlignCenter)
         pixmap = QPixmap('assets/spaceman.png')
         scaled = pixmap.scaled(
-            700, 700,
+            400, 600,
             Qt.KeepAspectRatio,
             Qt.SmoothTransformation
         )
@@ -697,7 +599,7 @@ class AstronautMonitor(QMainWindow):
         layout = QVBoxLayout()
         activity_layout = QHBoxLayout()
         
-        ACTIVITIES = ["No Activity", "Running", "Walking", "Hiking", "Cranking", "Lifting"]
+        ACTIVITIES = ["Idle", "Walking", "Jogging", "Lifting"]
 
         # Create individual buttons for each activity
         self.activity_buttons = {}
@@ -773,9 +675,7 @@ class AstronautMonitor(QMainWindow):
         self.about_page.setObjectName("aboutPage")
 
     def setup_chart(self, chart_widget, title):
-        # white background, black text
         plot_item = chart_widget.getPlotItem()
-        chart_widget.setBackground('w')
         plot_item.setTitle(title, **{
             'size': self.chart_style['title_size'],
             'color': self.chart_style['title_color']
@@ -907,9 +807,9 @@ class AstronautMonitor(QMainWindow):
                     self.resp_plot.setData(rel_ts, resp_np)
 
                     # Compute breathing rate
-                    rate = self.compute_breathing_rate(resp_np, ts_np)
-                    if rate:
-                        self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
+                    # rate = self.compute_breathing_rate(resp_np, ts_np)
+                    # if rate:
+                    #     self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
 
                     # Show peaks
                     peaks, _ = find_peaks(resp_np, height=1800, prominence=10, distance = 1)
@@ -962,38 +862,43 @@ class AstronautMonitor(QMainWindow):
     def update_connection_status(self, connected: bool):
         if connected:
             self.status_label.setText("Status: Connected")
-            self.status_label.setStyleSheet("color: white; font-weight: bold;font-size: 30px;")
         else:
             self.status_label.setText("Status: Disconnected")
-            self.status_label.setStyleSheet("color: #A25772; font-weight: bold;font-size: 30px;")
+            
+        # flip the dynamic property — Qt will re-style based on QSS rules
+        self.status_label.setProperty("connected", connected)
+
+        # force a re-polish so the style sheet is re-applied immediately
+        self.status_label.style().unpolish(self.status_label)
+        self.status_label.style().polish(self.status_label)
 
     def toggle_upload_to_mongo(self):
         if self.upload_toggle.isChecked():
-            self.upload_toggle.setText("Upload to MongoDB: ON")
+            self.upload_toggle.setText("MongoDB: ON")
             self.mongo_upload_enabled = True
         else:
-            self.upload_toggle.setText("Upload to MongoDB: OFF")
+            self.upload_toggle.setText("MongoDB: OFF")
             self.mongo_upload_enabled = False
 
 
-    def refresh_monitoring_page(self):
-        """Refresh the monitoring page by resetting the Bluetooth connection."""
-        logging.info("Resetting Bluetooth connection...")
-        if self.ble_worker and self.ble_worker.isRunning():
-            # Stop the running worker gracefully.
-            self.ble_worker.stop()
-            self.ble_worker.wait()  # Ensure the thread fully terminates.
-        # Create a new worker instance.
-        self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
-        self.ble_worker.data_received.connect(self.handle_ble_data)
-        self.ble_worker.start()
+    # def refresh_monitoring_page(self):
+    #     """Refresh the monitoring page by resetting the Bluetooth connection."""
+    #     logging.info("Resetting Bluetooth connection...")
+    #     if self.ble_worker and self.ble_worker.isRunning():
+    #         # Stop the running worker gracefully.
+    #         self.ble_worker.stop()
+    #         self.ble_worker.wait()  # Ensure the thread fully terminates.
+    #     # Create a new worker instance.
+    #     self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
+    #     self.ble_worker.data_received.connect(self.handle_ble_data)
+    #     self.ble_worker.start()
 
-        # Optionally, clear the chart and reset buffers
-        self.init_data_buffers()
-        self.current_chart_type = None
-        self.chart_widget.clear()
+    #     # Optionally, clear the chart and reset buffers
+    #     self.init_data_buffers()
+    #     self.current_chart_type = None
+    #     self.chart_widget.clear()
 
-        logging.info("Monitoring page refreshed.")
+    #     logging.info("Monitoring page refreshed.")
 
     def create_navbar(self):
         navbar_widget = QWidget()
@@ -1003,7 +908,7 @@ class AstronautMonitor(QMainWindow):
         
         self.logo_label = QLabel()
         pixmap = QPixmap("assets/lunarlogoLong.png")
-        pixmap = pixmap.scaled(400, 200, Qt.KeepAspectRatio)
+        pixmap = pixmap.scaled(300, 100, Qt.KeepAspectRatio)
         self.logo_label.setPixmap(pixmap)
 
         right_buttons = QWidget()
@@ -1024,10 +929,10 @@ class AstronautMonitor(QMainWindow):
         about_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.about_page))
         right_layout.addWidget(about_button)
    
-        connect_button = QPushButton("Connect")
-        connect_button.setObjectName("navButton")
-        connect_button.clicked.connect(self.refresh_monitoring_page)  
-        right_layout.addWidget(connect_button)
+        # connect_button = QPushButton("Connect")
+        # connect_button.setObjectName("navButton")
+        # connect_button.clicked.connect(self.refresh_monitoring_page)  
+        # right_layout.addWidget(connect_button)
     
         navbar_layout.addWidget(self.logo_label)
         navbar_layout.addStretch() 
@@ -1040,10 +945,9 @@ class AstronautMonitor(QMainWindow):
 
         self.status_label = QLabel("Status: Disconnected")
         self.status_label.setObjectName("statusLabel")
-        self.status_label.setStyleSheet("color: #A25772; font-weight: bold; font-size: 30px;")
         navbar_layout.addWidget(self.status_label)
 
-        self.upload_toggle = QPushButton("Upload to MongoDB: OFF")
+        self.upload_toggle = QPushButton("MongoDB: OFF")
         self.upload_toggle.setCheckable(True)
         self.upload_toggle.setChecked(False)
         self.upload_toggle.setObjectName("navButton")
@@ -1070,14 +974,14 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Astronaut Health Monitor")
         
-       # self.resize(1280, 800)
+        #self.resize(1600, 900)
 
     def start_monitoring(self, name, gender, age, weight):
         self.monitoring_page = AstronautMonitor(name, gender, age, weight)
         self.stack.addWidget(self.monitoring_page)
         self.stack.setCurrentWidget(self.monitoring_page)
         
-        #self.resize(1280, 800)
+        #self.resize(1600, 900)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
@@ -1085,7 +989,7 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    font_path = r"assets\Nasalization.otf"
+    font_path = r"assets/Nasalization.otf"
     font_id = QFontDatabase.addApplicationFont(font_path)
 
     if font_id != -1:
@@ -1095,9 +999,8 @@ if __name__ == "__main__":
       print("Failed to load font.")
     with open('stylesheet.qss', 'r') as file:
         app.setStyleSheet(file.read())
-
+    
     window = MainWindow()
-    #window.show()
     window.showFullScreen()
 
     sys.exit(app.exec())

@@ -174,9 +174,8 @@ QGridLayout {
     color: white1;
 }
 
-/* Input Fields */
-#introForm QLineEdit,
-#introForm QComboBox {
+QLineEdit#introForm,
+QComboBox#introForm {
     color: #062a61;
     font-size: 18px;
     border: 1px solid #ccc;
@@ -186,6 +185,16 @@ QGridLayout {
     background-color: white;
     min-width: 200px;
     width: 100%;
+}
+
+/* Style the dropdown list items */
+QComboBox#introForm QAbstractItemView {
+    /* text color inside the popup */
+    color: #062a61;
+    /* background of the popup */
+    background-color: white;
+    /* remove focus rectangle */
+    outline: 0;
 }
 
 /* Submit Button */
@@ -241,4 +250,17 @@ QGridLayout {
     font-weight: bold;
     background-color: transparent;
     margin-top: 20px;
+}
+
+QLabel#statusLabel[connected="true"] {
+    color: white;
+    font-weight: bold;
+    font-size: 28px;
+}
+
+/* when connected=false */
+QLabel#statusLabel[connected="false"] {
+    color: #A25772;
+    font-weight: bold;
+    font-size: 28px;
 }
