@@ -34,48 +34,71 @@ def fetch_training_data():
         print(f"Fetched {len(data)} training documents from MongoDB.")
     else:
         print("No training data retrieved from MongoDB.")
+    
     return data
 
-def process_training_data(data):
-    # 1) bucket docs by (timestamp,int, activity_id)
-    grouped = {}
-    for doc in data:
-        key = (int(doc['timestamp']), doc['activity_id'])
-        sensors = grouped.setdefault(key, {})
-        sensors[doc['sensor']] = doc
+def process_training_data(data, max_span=2.0):
 
-    # 2) build one record per complete sensor‐set
+    sensor_map = {
+        'PulseSensor':     ('avg_bpm',       'pulse_BPM'),
+        'RespiratoryRate': ('avg_resp',      'BRPM'),
+        'AmbientTemp':     ('body_temp',     'Celsius'),
+        'Accel':           ('step_rate',     's_rate'),
+        'Gyro':            ('rotation_rate', 'r_rate'),
+    }
+    required = set(sensor_map)
+
+    # sort all docs by timestamp
+    docs = sorted(data, key=lambda d: d['timestamp'])
     processed = []
-    for (ts, activity), sensors in grouped.items():
-        pulse = sensors.get('PulseSensor')
-        resp  = sensors.get('RespiratoryRate')
-        temp  = sensors.get('ObjectTemp')
-        accel = sensors.get('Accel')
-        gyro  = sensors.get('Gyro')
 
-        missing = [name for name, val in [
-            ('PulseSensor', pulse),
-            ('RespiratoryRate', resp),
-            ('Temp'          , temp),
-            ('Accel'         , accel),
-            ('Gyro'          , gyro),
-        ] if val is None]
-        if missing:
-            print(f"Skipping {ts,activity}: missing {missing}")
+    current_group    = {}
+    current_activity = None
+    group_start_ts   = None
+
+    for doc in docs:
+        s   = doc.get('sensor')
+        act = doc.get('activity_id')
+        ts  = doc.get('timestamp')
+
+        # ignore sensors we don't care about
+        if s not in sensor_map:
             continue
 
-        processed.append({
-            'avg_bpm'       : pulse.get('pulse_BPM'),
-            'avg_resp'      : resp.get('BRPM'),
-            'body_temp'     : temp.get('Celsius'),
-            'step_rate'     : accel.get('step_rate'),
-            'rotation_rate' : gyro.get('rotation_rate'),
-            'activity_id'   : activity
-        })
+        # if this doc lacks its required field, skip it
+        _, fld = sensor_map[s]
+        if fld not in doc:
+            print(f"Skipping {s} at {ts:.3f}: missing {fld}")
+            continue
+
+        # start new group on activity change or if group is empty
+        if act != current_activity or not current_group:
+            current_group    = {}
+            current_activity = act
+            group_start_ts   = ts
+
+        # if we’ve waited too long, drop and restart
+        if ts - group_start_ts > max_span:
+            current_group    = {}
+            current_activity = act
+            group_start_ts   = ts
+
+        # stash this reading
+        current_group[s] = doc
+
+        # once we have them all, build a training record
+        if required.issubset(current_group):
+            rec = {'activity_id': current_activity}
+            for sen, (feat, fld) in sensor_map.items():
+                rec[feat] = current_group[sen][fld]
+            processed.append(rec)
+
+            # reset for the next quintuple
+            current_group    = {}
+            current_activity = None
+            group_start_ts   = None
 
     df = pd.DataFrame(processed)
-    if df.empty:
-        print("No valid training data found.")
     return df
 
 def prepare_features_labels(df):
@@ -124,7 +147,7 @@ def train_activity_model():
                   metrics=['accuracy'])
 
     print("Starting training...")
-    model.fit(X_train, y_train, epochs=300, batch_size=32, validation_split=0.2, verbose=1)
+    model.fit(X_train, y_train, epochs=500, batch_size=32, validation_split=0.2, verbose=1)
     loss, acc = model.evaluate(X_test, y_test, verbose=1)
     print(f"Test Loss: {loss:.4f}, Test Accuracy: {acc:.4f}")
 

@@ -16,8 +16,6 @@ import os
 import numpy as np
 import logging
 import joblib
-from scipy.signal import find_peaks
-from pyqtgraph import InfiniteLine
 from bluetooth import NordicBLEWorker
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -209,7 +207,7 @@ class AstronautMonitor(QMainWindow):
 
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(lambda: self.update_connection_status(self.ble_worker.is_connected()))
-        self.status_timer.start(2000)  # check every 2 second
+        self.status_timer.start(2000) 
 
     def init_data_buffers(self):
         self.maxlen = 100
@@ -310,22 +308,24 @@ class AstronautMonitor(QMainWindow):
 
                 # Safely update raw buffers & UI
                 try:
-                    if sensor_name == "PulseSensor" and "Value_mV" in sensor_data:
+                    if sensor_name == "PulseSensor":
                         val = sensor_data.get("Value_mV", 0)
                         pulse = sensor_data.get("pulse_BPM", 0)
                         self.pulse_BPM.append(pulse)
                         self.pulse.append(val)
 
-                    elif sensor_name == "RespiratoryRate" and "avg_mV" in sensor_data:
+                    elif sensor_name == "RespRate":
                         val = sensor_data.get("avg_mV", 0)
+                        BRPM = sensor_data.get("BRPM", 0)
                         self.resp.append(val)
+                        self.brpm.append(BRPM)
                         self.timestamps.append(now_ts)
 
                     elif sensor_name == "Accel":
                         x = sensor_data.get("X_g", 0)
                         y = sensor_data.get("Y_g", 0)
                         z = sensor_data.get("Z_g", 0)
-                        step = sensor_data.get("step_rate", 0)
+                        step = sensor_data.get("s_rate", 0)
                         self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
                         self.step_rate.append(step)
 
@@ -333,43 +333,29 @@ class AstronautMonitor(QMainWindow):
                         x = sensor_data.get("X_deg", 0)
                         y = sensor_data.get("Y_deg", 0)
                         z = sensor_data.get("Z_deg", 0)
-                        rotate = sensor_data.get("rotation_rate", 0)
+                        rotate = sensor_data.get("r_rate", 0)
                         self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
                         self.rotate_rate.append(rotate)
 
-                    elif sensor_name == "ObjectTemp" and "Celsius" in sensor_data:
+                    elif sensor_name == "ObjectTemp":
                         val = sensor_data.get("Celsius", 0)
                         self.obj_temp.append(val)
 
-                    elif sensor_name == "AmbientTemp" and "Celsius" in sensor_data:
+                    elif sensor_name == "AmbientTemp":
                         val = sensor_data.get("Celsius", 0)
                         self.amb_temp.append(val)
 
-                    elif sensor_name == "Pressure" and "hPa" in sensor_data:
+                    elif sensor_name == "Pressure":
                         val = sensor_data.get("hPa", 0)
                         self.pressure.append(val)
 
-                    elif sensor_name == "SPO2_Sensor" and "SPO2" in sensor_data:
+                    elif sensor_name == "SPO2_Sensor":
                         val = sensor_data.get("SPO2", 0)
                         self.update_blood_oxygen(val)
 
                     # 5) build the Mongo document
                     doc = self.create_mongo_doc(sensor_name, sensor_data, now_ts)
 
-                    # 6) Handle specific sensor calculations (e.g., Breathing Rate for RespiratoryRate)
-                    if sensor_name == "RespiratoryRate" and len(self.resp) >= 2:
-                        self.brpm = self.compute_breathing_rate(
-                            list(self.resp),
-                            list(self.timestamps)
-                        )
-                        
-                        if self.brpm is not None:
-                            doc['BRPM'] = self.brpm
-                            lbl = self.data_labels["RespiratoryRate"]["BRPM"]
-                            disp = self.sensor_config["RespiratoryRate"]["measurements"]["BRPM"]
-                            lbl.setText(f"{disp}: {self.brpm:.0f}")
-                    
-                    # 7) queue for Mongo
                     self.mongo_buffer.append(doc)
 
                 except Exception as e:
@@ -450,34 +436,6 @@ class AstronautMonitor(QMainWindow):
 
         sensor_box.setLayout(box_layout)
         return sensor_box
-    
-    def compute_breathing_rate(self, resp_data, timestamps):
-        resp_arr = np.asarray(resp_data)
-        time_arr = np.asarray(timestamps)
-
-        if resp_arr.size != time_arr.size:
-            n = min(resp_arr.size, time_arr.size)
-            resp_arr = resp_arr[-n:]
-            time_arr = time_arr[-n:]
-
-        if resp_arr.size < 2:
-            return 0
-        
-        # Detect peaks
-        peaks, _ = find_peaks(resp_arr, height=1200, prominence=10, distance = 1) #1600 - Allan
-        peak_times = time_arr[peaks]
-
-        if peak_times.size == 0:
-            return 0
-
-        # Only consider peaks within the last 60 seconds
-        latest_time = time_arr[-1]
-        mask = peak_times >= (latest_time - 60)
-        recent_peaks = peak_times[mask]
-
-        # Breathing rate = breaths per minute
-        breathing_rate_bpm = recent_peaks.size
-        return breathing_rate_bpm
         
     def init_home_page(self):
         layout = QGridLayout()
@@ -497,7 +455,7 @@ class AstronautMonitor(QMainWindow):
                 "measurements": {"pulse_BPM": "Heart Rate (BPM)"},
                 "grid_position": (1, 0)  
             },
-            "RespiratoryRate": {
+            "RespRate": {
                 "display_name": "Breathing Rate Monitor",
                 "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
                 "grid_position": (2, 0)
@@ -509,12 +467,12 @@ class AstronautMonitor(QMainWindow):
             },
             "Accel": {
                 "display_name": "Rate Of Steps",
-                "measurements": {"step_rate": "Step Rate (steps/min)"},
+                "measurements": {"s_rate": "Step Rate (steps/min)"},
                 "grid_position": (1, 2)
             },
             "Gyro": {
                 "display_name": "Rate of Arm Swings",
-                "measurements": {"rotation_rate": "Rotation Rate (swings/min)"},
+                "measurements": {"r_rate": "Rotation Rate (swings/min)"},
                 "grid_position": (2, 2)
             },
             "Pressure": {
@@ -527,7 +485,7 @@ class AstronautMonitor(QMainWindow):
         # Maps sensor_name to chart type string for update_chart
         self.sensor_to_chart_type = {
             "PulseSensor": "pulse",
-            "RespiratoryRate": "resp",
+            "RespRate": "resp",
             "Accel": "accel",
             "Gyro": "gyro",
             "ObjectTemp": "temp",
@@ -599,7 +557,7 @@ class AstronautMonitor(QMainWindow):
         layout = QVBoxLayout()
         activity_layout = QHBoxLayout()
         
-        ACTIVITIES = ["Idle", "Walking", "Jogging", "Lifting"]
+        ACTIVITIES = ["Idle", "Walking", "Hopping", "Lifting", "Crouching"]
 
         # Create individual buttons for each activity
         self.activity_buttons = {}
@@ -659,7 +617,6 @@ class AstronautMonitor(QMainWindow):
         about_label.setObjectName("aboutTitle")
         about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(about_label)
-             # Image
         image_label = QLabel()
         pixmap = QPixmap("assets/group.png")
         image_label.setPixmap(pixmap.scaledToWidth(900, Qt.SmoothTransformation))
@@ -757,8 +714,7 @@ class AstronautMonitor(QMainWindow):
         plots = []
         for name, pen, symbol in zip(names, pens, symbols):
             if symbol:
-                p = self.chart_widget.plot(pen=pen, name=name,
-                                        symbol=symbol, symbolSize=5)
+                p = self.chart_widget.plot(pen=pen, name=name, symbol=symbol, symbolSize=5)
             else:
                 p = self.chart_widget.plot(pen=pen, name=name)
             plots.append(p)
@@ -797,34 +753,11 @@ class AstronautMonitor(QMainWindow):
                     self.pulse_plot.setData(relative_timestamps[:n], pulse_np[:n])
                 else:
                     logging.warning("pulse_plot not initialized or no pulse data.")
-
+            
             elif self.current_chart_type == 'resp':
-                if self.resp_plot and self.resp:
+                if self.resp and self.timestamps:
                     resp_np = np.array(self.resp)
-                    ts_np = np.array(self.timestamps)[:len(resp_np)]
-                    rel_ts = ts_np - ts_np[0]
-
-                    self.resp_plot.setData(rel_ts, resp_np)
-
-                    # Compute breathing rate
-                    # rate = self.compute_breathing_rate(resp_np, ts_np)
-                    # if rate:
-                    #     self.chart_widget.setTitle(f"Breathing Rate ({rate:.2f} bpm)")
-
-                    # Show peaks
-                    peaks, _ = find_peaks(resp_np, height=1800, prominence=10, distance = 1)
-                    peak_times = rel_ts[peaks]
-
-                    for line in self.peak_lines:
-                        self.chart_widget.removeItem(line)
-                    self.peak_lines.clear()
-
-                    for pt in peak_times:
-                        line = InfiniteLine(pos=pt, angle=90, pen=mkPen(color='b', style=Qt.DashLine))
-                        self.chart_widget.addItem(line)
-                        self.peak_lines.append(line)
-                else:
-                    logging.warning("resp_plot not initialized or no resp data.")
+                    self.resp_plot.setData(relative_timestamps[:len(resp_np)], resp_np)
 
             elif self.current_chart_type == 'accel':
                 if all([self.accel_x_plot, self.accel_y_plot, self.accel_z_plot]) and self.accel_x:
@@ -880,26 +813,6 @@ class AstronautMonitor(QMainWindow):
             self.upload_toggle.setText("MongoDB: OFF")
             self.mongo_upload_enabled = False
 
-
-    # def refresh_monitoring_page(self):
-    #     """Refresh the monitoring page by resetting the Bluetooth connection."""
-    #     logging.info("Resetting Bluetooth connection...")
-    #     if self.ble_worker and self.ble_worker.isRunning():
-    #         # Stop the running worker gracefully.
-    #         self.ble_worker.stop()
-    #         self.ble_worker.wait()  # Ensure the thread fully terminates.
-    #     # Create a new worker instance.
-    #     self.ble_worker = NordicBLEWorker(self.NORDIC_DEVICE_MAC, self.GATT_UUID)
-    #     self.ble_worker.data_received.connect(self.handle_ble_data)
-    #     self.ble_worker.start()
-
-    #     # Optionally, clear the chart and reset buffers
-    #     self.init_data_buffers()
-    #     self.current_chart_type = None
-    #     self.chart_widget.clear()
-
-    #     logging.info("Monitoring page refreshed.")
-
     def create_navbar(self):
         navbar_widget = QWidget()
         navbar_layout = QHBoxLayout(navbar_widget)
@@ -928,11 +841,6 @@ class AstronautMonitor(QMainWindow):
         about_button.setObjectName("navButton")
         about_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.about_page))
         right_layout.addWidget(about_button)
-   
-        # connect_button = QPushButton("Connect")
-        # connect_button.setObjectName("navButton")
-        # connect_button.clicked.connect(self.refresh_monitoring_page)  
-        # right_layout.addWidget(connect_button)
     
         navbar_layout.addWidget(self.logo_label)
         navbar_layout.addStretch() 
@@ -973,15 +881,13 @@ class MainWindow(QMainWindow):
         self.intro_page.profile_submitted.connect(self.start_monitoring)
 
         self.setWindowTitle("Astronaut Health Monitor")
-        
-        #self.resize(1600, 900)
+ 
 
     def start_monitoring(self, name, gender, age, weight):
         self.monitoring_page = AstronautMonitor(name, gender, age, weight)
         self.stack.addWidget(self.monitoring_page)
         self.stack.setCurrentWidget(self.monitoring_page)
         
-        #self.resize(1600, 900)
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape:
