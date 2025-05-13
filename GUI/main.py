@@ -17,6 +17,7 @@ import numpy as np
 import logging
 import joblib
 from bluetooth import NordicBLEWorker
+from PySide6.QtWidgets import QLabel, QComboBox, QTextEdit, QFrame
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
@@ -181,6 +182,9 @@ class AstronautMonitor(QMainWindow):
         self.update_timer.timeout.connect(self.flush_mongo_buffer)
         self.update_timer.timeout.connect(self.update_home_page)
         self.update_timer.timeout.connect(self.update_current_chart)
+        self.update_timer.timeout.connect(self.update_data_collection_page)
+        # Update the page to reflect the new data
+     
         self.update_timer.start(1000)
         
         self.prediction_timer = QTimer(self)
@@ -196,6 +200,7 @@ class AstronautMonitor(QMainWindow):
         self.model = model
         self.scaler = scaler
         self.encoder = encoder
+        self.model_status_label.setText("Model Loaded: True")
         # print("ML artifacts are ready for use in predictions.")
          
     def setup_ble_worker(self):
@@ -230,6 +235,9 @@ class AstronautMonitor(QMainWindow):
         self.pulse_BPM = deque(maxlen=10)
         
     def flush_mongo_buffer(self):
+                         # Log the content of the buffer before insertion
+        preview = "\n".join([str(record) for record in self.mongo_buffer])
+        self.mongo_output_area.append(f"{preview}\n")
         if not self.mongo_upload_enabled:
          
             self.mongo_buffer = []  # Clear it anyway to avoid memory buildup
@@ -237,10 +245,14 @@ class AstronautMonitor(QMainWindow):
 
         if self.mongo_buffer:
             try:
+
+
                 self.collection.insert_many(self.mongo_buffer)
+                self.mongo_output_area.append(f"Inserted {len(self.mongo_buffer)} records successfully.\n")
                 self.mongo_buffer = []
             except Exception as e:
                 logging.error(f"Error inserting into MongoDB: {e}")
+                self.mongo_output_area.append(f"Upload Error: {str(e)}")
 
                 
     def update_blood_oxygen(self, SPO2):
@@ -258,13 +270,22 @@ class AstronautMonitor(QMainWindow):
             status = "Critical"
 
         self.blood_oxygen_label.setText(f"SpO2: {status}")
+
+    
+    def toggle_data_upload(self):
+        self.mongo_upload_enabled = not self.mongo_upload_enabled
+        if self.mongo_upload_enabled:
+            self.upload_status.setText("Upload Status: <font color='green'>ON</font>")
+            self.upload_toggle_button.setText("Stop Upload")
+        else:
+            self.upload_status.setText("Upload Status: <font color='red'>OFF</font>")
+            self.upload_toggle_button.setText("Start Upload")
+
                 
-    def update_prediction_display(self, prediction):
-        """Update the UI with the predicted activity."""
-        # Console log
-        print(f"Predicted Activity: {prediction}")
-        # Update the on‐screen label
+    def update_prediction_display(self, prediction, confidence=None):
         self.activity_label.setText(f"Current Activity: {prediction}")
+        if confidence is not None:
+            self.confidence_label.setText(f"Confidence: {confidence:.2%}")
         
     def on_new_sensor_data(self):
 
@@ -385,14 +406,17 @@ class AstronautMonitor(QMainWindow):
         self.home_page = QWidget()
         self.data_page = QWidget()  
         self.about_page = QWidget()
+        self.data_collection_page = QWidget()
         
         self.init_home_page()
         self.init_data_page() 
         self.init_about_page()
+        self.init_data_collection_page()
         
         self.central_stack.addWidget(self.home_page)
         self.central_stack.addWidget(self.data_page)
         self.central_stack.addWidget(self.about_page)  
+        self.central_stack.addWidget(self.data_collection_page)  
         self.create_navbar()
         
     def switch_to_chart(self, chart_type):
@@ -541,6 +565,26 @@ class AstronautMonitor(QMainWindow):
                 label = self.data_labels[sensor_name][field]
                 label.setText(f"{disp}: {s}")
 
+    def update_data_collection_page(self):
+        if not hasattr(self, 'latest_data'):
+            return
+
+        # Assuming the data structure is similar to the homepage (same keys)
+        for field, label in self.mongo_data_labels.items():
+            if field not in self.latest_data:
+                label.setText("N/A")
+                continue
+
+            raw = self.latest_data[field]
+
+            if isinstance(raw, float):
+                if raw.is_integer():
+                    raw = int(raw)
+                else:
+                    raw = f"{raw:.1f}"
+
+            label.setText(f"{raw}")
+
     def set_current_activity(self, activity):
         # Uncheck all buttons
         for button in self.activity_buttons.values():
@@ -556,27 +600,27 @@ class AstronautMonitor(QMainWindow):
 
     def init_data_page(self):
         layout = QVBoxLayout()
-        activity_layout = QHBoxLayout()
+        # activity_layout = QHBoxLayout()
         
-        ACTIVITIES = ["Idle", "Walking", "Skipping", "Lifting", "Crouching"]
+        # ACTIVITIES = ["Idle", "Walking", "Skipping", "Lifting", "Crouching"]
 
-        # Create individual buttons for each activity
-        self.activity_buttons = {}
-        for activity in ACTIVITIES:
-            button = QPushButton(activity)
-            button.setCheckable(True)  # Make the button toggleable
-            button.clicked.connect(lambda checked, act=activity: self.set_current_activity(act))
-            self.activity_buttons[activity] = button
-            activity_layout.addWidget(button)
+        # # Create individual buttons for each activity
+        # self.activity_buttons = {}
+        # for activity in ACTIVITIES:
+        #     button = QPushButton(activity)
+        #     button.setCheckable(True)  # Make the button toggleable
+        #     button.clicked.connect(lambda checked, act=activity: self.set_current_activity(act))
+        #     self.activity_buttons[activity] = button
+        #     activity_layout.addWidget(button)
 
-        # Create a widget to hold the activity layout
-        activity_widget = QWidget()
-        activity_widget.setLayout(activity_layout)
+        # # Create a widget to hold the activity layout
+        # activity_widget = QWidget()
+        # activity_widget.setLayout(activity_layout)
 
         # Create a horizontal layout to center the activity widget
         centered_layout = QHBoxLayout()
         centered_layout.addStretch()
-        centered_layout.addWidget(activity_widget)
+        # centered_layout.addWidget(activity_widget)
         centered_layout.addStretch()
 
         layout.addLayout(centered_layout)
@@ -631,6 +675,94 @@ class AstronautMonitor(QMainWindow):
         self.about_page = QWidget()
         self.about_page.setLayout(layout)
         self.about_page.setObjectName("aboutPage")
+
+    def create_data_labels(self, right_section):
+        # Example fields to show on the page
+        data_fields = [
+            "ACelsius", "BRPM", "Value_mV", "SPO2", "pulse_BPM", "r_rate", "s_rate"
+        ]
+
+        # Add a label for each field to right_section and store them in mongo_data_labels
+        for field in data_fields:
+            label = QLabel(f"{field}: N/A")
+            self.mongo_data_labels[field] = label
+            right_section.addWidget(label)
+
+    def init_data_collection_page(self):
+        
+
+        main_layout = QHBoxLayout()
+
+        # ---------------- Left: ML Predictions and Status ---------------- #
+        left_section = QVBoxLayout()
+
+        # ML Prediction Title
+        left_section.addWidget(QLabel("<b>ML Prediction Status</b>"))
+
+        # Current Activity Prediction
+        self.activity_label = QLabel("Current Activity: Loading...")
+        left_section.addWidget(self.activity_label)
+
+        # Confidence Label
+        self.confidence_label = QLabel("Confidence: N/A")
+        left_section.addWidget(self.confidence_label)
+
+        # Model Status
+        self.model_status_label = QLabel("Model Loaded: False")
+        left_section.addWidget(self.model_status_label)
+
+        # Spacer
+        left_section.addStretch()
+
+        # ---------------- Right: Data Labeling & Uploading ---------------- #
+        right_section = QVBoxLayout()
+
+        # Label Title
+        right_section.addWidget(QLabel("<b>Labeling & Upload Controls</b>"))
+
+        # Label selection dropdown
+        self.label_combo = QComboBox()
+        self.label_combo.addItems(["Idle", "Walking", "Skipping", "Lifting", "Crouching"])
+        self.label_combo.currentTextChanged.connect(lambda label: self.set_current_activity(label))
+        right_section.addWidget(QLabel("Select Label:"))
+        right_section.addWidget(self.label_combo)
+
+        # Uploading status indicator
+        self.upload_status = QLabel("Upload Status: <font color='red'>OFF</font>")
+        right_section.addWidget(self.upload_status)
+
+        # Start/Stop Upload Button
+        self.upload_toggle_button = QPushButton("Start Upload")
+        self.upload_toggle_button.setCheckable(True)
+        self.upload_toggle_button.clicked.connect(self.toggle_data_upload)
+        right_section.addWidget(self.upload_toggle_button)
+
+        # MongoDB Output Preview
+        right_section.addWidget(QLabel("Currently Collected Data:"))
+        self.mongo_output_area = QTextEdit()
+        self.mongo_output_area.setReadOnly(True)
+        self.mongo_output_area.setFixedHeight(150)
+        right_section.addWidget(self.mongo_output_area)
+
+              # Data fields labels (e.g., temperature, pulse, etc.)
+        self.mongo_data_labels = {}  # A dictionary to hold all your data-related labels
+        self.create_data_labels(right_section)
+        # Spacer
+        #right_section.addStretch()
+
+        # Add left and right section to main layout
+        main_layout.addLayout(left_section)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.VLine)
+        divider.setFrameShadow(QFrame.Sunken)
+        main_layout.addWidget(divider)
+
+        main_layout.addLayout(right_section)
+
+        # Set layout to the page
+        self.data_collection_page.setLayout(main_layout)
+        self.update_data_collection_page() 
 
     def setup_chart(self, chart_widget, title):
         plot_item = chart_widget.getPlotItem()
@@ -837,6 +969,12 @@ class AstronautMonitor(QMainWindow):
         data_button.setObjectName("navButton")
         data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
         right_layout.addWidget(data_button)
+
+        
+        data_collection_button = QPushButton("Data Collection")
+        data_collection_button.setObjectName("navButton")
+        data_collection_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_collection_page))
+        right_layout.addWidget(data_collection_button)
 
         about_button = QPushButton("About")
         about_button.setObjectName("navButton")
