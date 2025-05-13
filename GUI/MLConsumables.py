@@ -37,76 +37,40 @@ def fetch_training_data():
     
     return data
 
-def process_training_data(data, max_span=2.0):
+def process_training_data(data):
+    """
+    Turn your flat Mongo documents into a DataFrame with one row per timestamp,
+    pulling out exactly the five features we need.
+    """
+    # 1) DataFrame from list of dicts
+    df = pd.DataFrame(data)
 
-    sensor_map = {
-        'PulseSensor':     ('avg_bpm',       'pulse_BPM'),
-        'RespiratoryRate': ('avg_resp',      'BRPM'),
-        'AmbientTemp':     ('body_temp',     'Celsius'),
-        'Accel':           ('step_rate',     's_rate'),
-        'Gyro':            ('rotation_rate', 'r_rate'),
-    }
-    required = set(sensor_map)
+    # 2) Rename the columns to match our feature names
+    df = df.rename(columns={
+        "pulse_BPM": "avg_bpm",
+        "BRPM":      "avg_resp",
+        "OCelsius":  "body_temp",
+        "s_rate":    "step_rate",
+        "r_rate":    "rotation_rate"
+    })
 
-    # sort all docs by timestamp
-    docs = sorted(data, key=lambda d: d['timestamp'])
-    processed = []
+    # 3) Keep only the columns we’ll train on, plus the label
+    df = df[[
+        "activity_id",
+        "avg_bpm",
+        "avg_resp",
+        "body_temp"
+        "step_rate",
+        "rotation_rate"
+    ]]
 
-    current_group    = {}
-    current_activity = None
-    group_start_ts   = None
+    df = df.dropna()
 
-    for doc in docs:
-        s   = doc.get('sensor')
-        act = doc.get('activity_id')
-        ts  = doc.get('timestamp')
-
-        # ignore sensors we don't care about
-        if s not in sensor_map:
-            continue
-
-        # if this doc lacks its required field, skip it
-        _, fld = sensor_map[s]
-        if fld not in doc:
-            print(f"Skipping {s} at {ts:.3f}: missing {fld}")
-            continue
-
-        # start new group on activity change or if group is empty
-        if act != current_activity or not current_group:
-            current_group    = {}
-            current_activity = act
-            group_start_ts   = ts
-
-        # if we’ve waited too long, drop and restart
-        if ts - group_start_ts > max_span:
-            current_group    = {}
-            current_activity = act
-            group_start_ts   = ts
-
-        # stash this reading
-        current_group[s] = doc
-
-        # once we have them all, build a training record
-        if required.issubset(current_group):
-            rec = {'activity_id': current_activity}
-            for sen, (feat, fld) in sensor_map.items():
-                rec[feat] = current_group[sen][fld]
-            processed.append(rec)
-
-            # reset for the next quintuple
-            current_group    = {}
-            current_activity = None
-            group_start_ts   = None
-
-    df = pd.DataFrame(processed)
     return df
 
 def prepare_features_labels(df):
     # Extract features and labels
-    df = df.dropna(subset=[
-        'avg_bpm','avg_resp','body_temp','step_rate','rotation_rate'
-    ])
-    X = df[['avg_bpm','avg_resp','body_temp','step_rate','rotation_rate']].values
+    X = df[['avg_bpm','avg_resp', 'body_temp','step_rate','rotation_rate']].values
     y = df['activity_id'].values.reshape(-1, 1)    
 
     # Feature scaling

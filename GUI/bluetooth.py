@@ -1,6 +1,5 @@
 import asyncio
-import re
-import json
+import csv
 import logging
 from PySide6.QtCore import QThread, Signal
 from bleak import BleakClient
@@ -19,6 +18,16 @@ class NordicBLEWorker(QThread):
         self.received_data = ""
         self.client = None
         self.stop_requested = False
+        
+        self.csv_headers = [
+            "X_g","Y_g","Z_g","s_rate",
+            "X_deg","Y_deg","Z_deg","r_rate",
+            "ACelsius", "OCelsius",
+            "hPa",
+            "avg_mV", "BRPM",
+            "Value_mV", "pulse_BPM", 
+            "SPO2"
+        ]
         
     async def connect_and_listen(self):
         while not self.stop_requested:
@@ -50,12 +59,14 @@ class NordicBLEWorker(QThread):
 
                             self.received_data += decoded
                             self.process_received_data()
+                            
+                            # print(f">>> DECODED: {decoded!r}")
 
                         except Exception as e:
                             logging.error(f"Error during read: {e}")
                             break  # Drop to reconnect attempt
 
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(1)
 
             except Exception as e:
                 logging.error(f"BLE connection error: {e}")
@@ -64,38 +75,33 @@ class NordicBLEWorker(QThread):
                 self.client = None
                 self.connected = False
                 logging.info("Disconnected BLE client")
-
+                
             if not self.stop_requested:
                 logging.info(f"Retrying connection in {self.retry_interval} seconds...")
                 await asyncio.sleep(self.retry_interval)
  
     def process_received_data(self):
-        """
-        Extract complete JSON arrays (wrapped in square brackets)
-        from the buffer, drop anything that won't parse, and emit each item.
-        """
-        json_pattern = r'\[.*?\]'
-        matches = list(re.finditer(json_pattern, self.received_data))
-        if not matches:
-            return
-
-        # Trim buffer up through the end of the last match
-        last_index = matches[-1].end()
-        chunks = [m.group() for m in matches]
-        self.received_data = self.received_data[last_index:]
-
-        for chunk in chunks:
-            try:
-                payload = json.loads(chunk)
-            except json.JSONDecodeError as e:
-                logging.warning(f"{e}: {chunk}")
+        # split on newlines; keep the last partial line in the buffer
+        lines = self.received_data.split('\n')
+        complete, self.received_data = lines[:-1], lines[-1]
+        for line in complete:
+            if not line.strip():
                 continue
-            
-            if isinstance(payload, list):
-                for packet in payload:
+            # use csv.reader in case you want to handle quoted fields later
+            for row in csv.reader([line]):
+                # convert to floats
+                try:
+                    vals = [float(x) for x in row]
+                except ValueError:
+                    logging.warning(f"Bad CSV row: {row}")
+                    continue
+                # map to dict if you like:
+                if len(vals) == len(self.csv_headers):
+                    packet = dict(zip(self.csv_headers, vals))
                     self.data_received.emit(packet)
-            else:
-                continue
+                else:
+                    # fallback: emit raw list
+                    self.data_received.emit(vals)
 
     def run(self):
         asyncio.run(self.connect_and_listen())

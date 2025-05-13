@@ -207,7 +207,7 @@ class AstronautMonitor(QMainWindow):
 
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(lambda: self.update_connection_status(self.ble_worker.is_connected()))
-        self.status_timer.start(2000) 
+        self.status_timer.start(1000) 
 
     def init_data_buffers(self):
         self.maxlen = 100
@@ -216,18 +216,18 @@ class AstronautMonitor(QMainWindow):
         self.accel_x = deque(maxlen=self.maxlen)
         self.accel_y = deque(maxlen=self.maxlen)
         self.accel_z = deque(maxlen=self.maxlen)
-        self.step_rate = deque(maxlen=self.maxlen)
+        self.step_rate = deque(maxlen=10)
         self.gyro_x = deque(maxlen=self.maxlen)
         self.gyro_y = deque(maxlen=self.maxlen)
         self.gyro_z = deque(maxlen=self.maxlen)
-        self.rotate_rate = deque(maxlen=self.maxlen)
+        self.rotate_rate = deque(maxlen=10)
         self.obj_temp = deque(maxlen=self.maxlen)
         self.amb_temp = deque(maxlen=self.maxlen)
         self.pressure = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
         self.spo2_buffer = deque(maxlen=5)
-        self.brpm = deque(maxlen=self.maxlen)
-        self.pulse_BPM = deque(maxlen=self.maxlen)
+        self.brpm = deque(maxlen=10)
+        self.pulse_BPM = deque(maxlen=10)
         
     def flush_mongo_buffer(self):
         if not self.mongo_upload_enabled:
@@ -271,118 +271,112 @@ class AstronautMonitor(QMainWindow):
         # compute the 10‑s averages
         avg_bpm  = np.mean(self.pulse_BPM)
         avg_brpm = np.mean(self.brpm)
-        body_temp = np.mean(self.obj_temp)
         step_rate = np.mean(self.step_rate)
         rotate_rate = np.mean(self.rotate_rate)
 
         # scale, predict, decode
-        X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
+        X_new    = np.array([[avg_bpm, avg_brpm, step_rate, rotate_rate]])
         X_scaled = self.scaler.transform(X_new)
         probs    = self.model.predict(X_scaled)
         idx      = np.argmax(probs, axis=1)[0]
         label    = self.encoder.categories_[0][idx]
 
         # update the UI
-        self.update_prediction_display(label)   
+        self.update_prediction_display(label)  
+        
+    VALID_RANGES = {
+        "s_rate":    (0, 205),
+        "r_rate":    (0, 210),
+        "OCelsius":  (10.0, 45.0),
+        "Value_mV":  (0, 3300),
+        "pulse_BPM": (0, 220),
+        "avg_mV":    (0, 3300),
+        "BRPM":      (0, 60)
+    }
+
+    def clamp(self, field: str, val: float) -> float:
+        """
+        Clamp val into the valid range for this field, if defined;
+        otherwise return val unchanged.
+        """
+        if field in self.VALID_RANGES:
+            lo, hi = self.VALID_RANGES[field]
+            if val < lo:
+                return lo
+            if val > hi:
+                return hi
+        return val
 
     def handle_ble_data(self, data):
         try:
             now_ts = time.time()
 
-            # 2) flatten list → dict
-            if isinstance(data, list):
-                merged = {}
-                for obj in data:
-                    merged.update(obj)
-                data = merged
+            for field, val in data.items():
+                if field in self.VALID_RANGES:
+                    data[field] = self.clamp(field, val)
 
-            # 3) update latest_data cache
-            if not hasattr(self, 'latest_data'):
-                self.latest_data = {}
+            self.latest_data = getattr(self, "latest_data", {})
             self.latest_data.update(data)
 
-            # 4) for each sensor, update buffers, UI, and build one Mongo doc
-            for sensor_name, sensor_data in data.items():
-                if not isinstance(sensor_data, dict):
-                    continue
+            # — Accelerometer
+            x, y, z = data["X_g"], data["Y_g"], data["Z_g"]
+            s_rate  = self.clamp("s_rate", data["s_rate"])
+            self.accel_x.append(x)
+            self.accel_y.append(y)
+            self.accel_z.append(z)
+            self.step_rate.append(s_rate)
 
-                # Safely update raw buffers & UI
-                try:
-                    if sensor_name == "PulseSensor":
-                        val = sensor_data.get("Value_mV", 0)
-                        pulse = sensor_data.get("pulse_BPM", 0)
-                        self.pulse_BPM.append(pulse)
-                        self.pulse.append(val)
+            # — Gyroscope
+            gx, gy, gz = data["X_deg"], data["Y_deg"], data["Z_deg"]
+            r_rate     = self.clamp("r_rate", data["r_rate"])
+            self.gyro_x.append(gx)
+            self.gyro_y.append(gy)
+            self.gyro_z.append(gz)
+            self.rotate_rate.append(r_rate)
 
-                    elif sensor_name == "RespRate":
-                        val = sensor_data.get("avg_mV", 0)
-                        BRPM = sensor_data.get("BRPM", 0)
-                        self.resp.append(val)
-                        self.brpm.append(BRPM)
-                        self.timestamps.append(now_ts)
+            # — Temperatures
+            ac = data["ACelsius"]
+            oc = self.clamp("OCelsius", data["OCelsius"])
+            self.amb_temp.append(ac)
+            self.obj_temp.append(oc)
 
-                    elif sensor_name == "Accel":
-                        x = sensor_data.get("X_g", 0)
-                        y = sensor_data.get("Y_g", 0)
-                        z = sensor_data.get("Z_g", 0)
-                        step = sensor_data.get("s_rate", 0)
-                        self.accel_x.append(x); self.accel_y.append(y); self.accel_z.append(z)
-                        self.step_rate.append(step)
+            # — Pressure
+            self.pressure.append(data["hPa"])
 
-                    elif sensor_name == "Gyro":
-                        x = sensor_data.get("X_deg", 0)
-                        y = sensor_data.get("Y_deg", 0)
-                        z = sensor_data.get("Z_deg", 0)
-                        rotate = sensor_data.get("r_rate", 0)
-                        self.gyro_x.append(x); self.gyro_y.append(y); self.gyro_z.append(z)
-                        self.rotate_rate.append(rotate)
+            # — Pulse
+            mv  = self.clamp("Value_mV",  data["Value_mV"])
+            bpm = self.clamp("pulse_BPM", data["pulse_BPM"])
+            self.pulse.append(mv)
+            self.pulse_BPM.append(bpm)
 
-                    elif sensor_name == "ObjectTemp":
-                        val = sensor_data.get("Celsius", 0)
-                        self.obj_temp.append(val)
-
-                    elif sensor_name == "AmbientTemp":
-                        val = sensor_data.get("Celsius", 0)
-                        self.amb_temp.append(val)
-
-                    elif sensor_name == "Pressure":
-                        val = sensor_data.get("hPa", 0)
-                        self.pressure.append(val)
-
-                    elif sensor_name == "SPO2_Sensor":
-                        val = sensor_data.get("SPO2", 0)
-                        self.update_blood_oxygen(val)
-
-                    # 5) build the Mongo document
-                    doc = self.create_mongo_doc(sensor_name, sensor_data, now_ts)
-
-                    self.mongo_buffer.append(doc)
-
-                except Exception as e:
-                    logging.error(f"Error processing data for sensor {sensor_name}: {e}")
-
-            # 8) flush buffer and run prediction
+            # — Respiration
+            avg = self.clamp("avg_mV", data["avg_mV"])
+            br  = self.clamp("BRPM",   data["BRPM"])
+            self.resp.append(avg)
+            self.brpm.append(br)
+            self.timestamps.append(now_ts)
+            
+            # — Blood Oxygen
+            spo2 = data["SPO2"]
+            self.update_blood_oxygen(spo2)
+            
+            doc = {
+                "timestamp":        now_ts,
+                "astronaut_name":   self.astronaut_name,
+                "astronaut_gender": self.astronaut_gender,
+                "astronaut_age":    self.astronaut_age,
+                "astronaut_weight": self.astronaut_weight,
+                "activity_id":      self.current_activity,
+            }
+            # merge in the flat CSV data
+            doc.update(data)
+            self.mongo_buffer.append(doc)
+            
             self.flush_mongo_buffer()
 
         except Exception as e:
             logging.error(f"Error processing BLE data: {e}")
             
-    def create_mongo_doc(self, sensor_name, sensor_data, now_ts):
-        """
-        Helper function to create a MongoDB document.
-        """
-        doc = {
-            'sensor': sensor_name,
-            'astronaut_name': self.astronaut_name,
-            'astronaut_gender': self.astronaut_gender,
-            'astronaut_age': self.astronaut_age,
-            'astronaut_weight': self.astronaut_weight,
-            'timestamp': now_ts,
-            'activity_id': self.current_activity
-        }
-        doc.update(sensor_data)  # Add specific sensor data
-
-        return doc
     def initUI(self):
         self.central_stack = QStackedWidget()
         self.setCentralWidget(self.central_stack)
@@ -462,7 +456,7 @@ class AstronautMonitor(QMainWindow):
             },
             "ObjectTemp": {
                 "display_name": "Body Temperature",
-                "measurements": {"Celsius": "Temperature (°C)"},
+                "measurements": {"OCelsius": "Temperature (°C)"},
                 "grid_position": (3, 0)  
             },
             "Accel": {
@@ -525,20 +519,26 @@ class AstronautMonitor(QMainWindow):
         self.home_page.setLayout(layout)
 
     def update_home_page(self):
-        # print(">>> latest_data keys:", list(self.latest_data.keys()))
         if not hasattr(self, 'latest_data'):
             return
 
-        for sensor_name, sensor_data in self.latest_data.items():
-            # skip anything that isn’t a dict or we don’t have labels for
-            if sensor_name not in self.data_labels or not isinstance(sensor_data, dict):
-                continue
+        for sensor_name, config in self.sensor_config.items():
+            for field, disp in config['measurements'].items():
+                if field not in self.latest_data:
+                    continue
 
-            # only loop over the keys that actually exist in self.data_labels
-            for key, label in self.data_labels[sensor_name].items():
-                if key in sensor_data:
-                    disp = self.sensor_config[sensor_name]['measurements'][key]
-                    label.setText(f"{disp}: {sensor_data[key]}") 
+                raw = self.latest_data[field]
+
+                if isinstance(raw, float):
+                    if raw.is_integer():
+                        s = str(int(raw))
+                    else:
+                        s = f"{raw:.1f}"  
+                else:
+                    s = str(raw)
+
+                label = self.data_labels[sensor_name][field]
+                label.setText(f"{disp}: {s}")
 
     def set_current_activity(self, activity):
         # Uncheck all buttons
@@ -557,7 +557,7 @@ class AstronautMonitor(QMainWindow):
         layout = QVBoxLayout()
         activity_layout = QHBoxLayout()
         
-        ACTIVITIES = ["Idle", "Walking", "Hopping", "Lifting", "Crouching"]
+        ACTIVITIES = ["Idle", "Walking", "Skipping", "Lifting", "Crouching"]
 
         # Create individual buttons for each activity
         self.activity_buttons = {}
