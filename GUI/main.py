@@ -271,11 +271,12 @@ class AstronautMonitor(QMainWindow):
         # compute the 10‑s averages
         avg_bpm  = np.mean(self.pulse_BPM)
         avg_brpm = np.mean(self.brpm)
+        body_temp = np.mean(self.obj_temp)
         step_rate = np.mean(self.step_rate)
         rotate_rate = np.mean(self.rotate_rate)
 
         # scale, predict, decode
-        X_new    = np.array([[avg_bpm, avg_brpm, step_rate, rotate_rate]])
+        X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
         X_scaled = self.scaler.transform(X_new)
         probs    = self.model.predict(X_scaled)
         idx      = np.argmax(probs, axis=1)[0]

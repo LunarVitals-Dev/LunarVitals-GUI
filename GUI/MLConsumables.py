@@ -59,7 +59,7 @@ def process_training_data(data):
         "activity_id",
         "avg_bpm",
         "avg_resp",
-        "body_temp"
+        "body_temp",
         "step_rate",
         "rotation_rate"
     ]]
