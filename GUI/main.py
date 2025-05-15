@@ -478,12 +478,6 @@ class AstronautMonitor(QMainWindow):
         
     def init_home_page(self):
         layout = QGridLayout()
-        
-        # Header title
-        header_label = QLabel(f"Astronaut {self.astronaut_name}'s Dashboard")
-        header_label.setObjectName("pageHeader")
-        header_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(header_label, 0, 0, 1, 3)  # Title spans 3 columns at the top
 
         self.data_labels = {}
 
