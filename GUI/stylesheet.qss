@@ -43,10 +43,8 @@ QPushButton#navButton:hover {
 /* Headers */
 #pageHeader {
     color: white;
-    font-size: 40px;
+    font-size: 24px;
     font-weight: bold;
-    margin: 10px 0;
-    padding: 12px;
     border: none;
     border-radius: 8px;
 }
@@ -100,7 +98,6 @@ QPushButton:hover {
     font-weight: bold;
     font-size: 58px;
     padding: 2px;
-    
 }
 
 /* Sensor Box Styling - Now Visible */
@@ -108,9 +105,9 @@ QPushButton:hover {
     font-weight: bold;
     background-color: #94B4C1; /* Light gray background */
     border: 0px solid white; /* Blue border */
+    margin: 0; 
     border-radius: 10px; /* Rounded corners */
-    padding: 15px;
-    margin: 10px;
+    min-width: 0;
 }
 
 .sensor-title-button {
@@ -119,8 +116,8 @@ QPushButton:hover {
 
 /* Sensor Values */
 .sensor-value {
-    font-size: 24px;
-    font-weight: light;
+    font-size: 18px;
+    font-weight: bold;
     color: #213448;
     qproperty-alignment: 'AlignCenter';
 }
@@ -130,13 +127,11 @@ QPushButton:hover {
     border: 0px solid #4a90e2;
     background-color: #213448;
     border-radius: 10px;
-    padding: 15px;
-    margin: 10px;
 }
 
 /* Grid Layout Spacing */
 QGridLayout {
-    spacing: 20px;
+    spacing: 10px;
 }
 
 
@@ -239,17 +234,16 @@ QComboBox#introForm QAbstractItemView {
 
 #activityLabel {
     color: white;           
-    font-size: 20px;        
-    font-weight: bold;
+    font-size: 18px;        
     background-color: transparent;
 }
 
 #bloodOxygenLabel {
     color: white;          
-    font-size: 20px;         
+    font-size: 18px;         
     font-weight: bold;
     background-color: transparent;
-    margin-top: 20px;
+    margin-top: 10px;
 }
 
 QLabel#statusLabel[connected="true"] {
@@ -263,4 +257,29 @@ QLabel#statusLabel[connected="false"] {
     color: #A25772;
     font-weight: bold;
     font-size: 28px;
+}
+
+/* Normal (green) */
+QLabel#bloodOxygenLabel[status="Normal"] {
+    color: green;
+}
+
+/* Concerning (yellow) */
+QLabel#bloodOxygenLabel[status="Concerning"] {
+    color: yellow;
+}
+
+/* Low (red) */
+QLabel#bloodOxygenLabel[status="Low"] {
+    color: red;
+}
+
+/* Critical (blood-red) */
+QLabel#bloodOxygenLabel[status="Critical"] {
+    color: darkred;
+}
+
+/* Not Detected (white) */
+QLabel#bloodOxygenLabel[status="Detecting"] {
+    color: white;
 }
