@@ -72,7 +72,7 @@ def init_data_collection_page(self):
     right_section.addWidget(QLabel("Select Activity Label:"))
 
     self.label_buttons = {}
-    activity_labels = ["Idle", "Walking", "Skipping", "Lifting", "Crouching"]
+    activity_labels = ["Idle", "Walking", "Lifting", "Crouching", "Skipping"]
     button_layout = QGridLayout()
 
     for i, label in enumerate(activity_labels):

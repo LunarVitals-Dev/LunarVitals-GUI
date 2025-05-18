@@ -25,7 +25,7 @@ QPushButton#navButton {
     border: none;               /* no border */
     color: #94B4C1;               /* white text */
     padding: 8px 16px;          /* optional spacing */
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
 }
 
@@ -46,19 +46,40 @@ QPushButton#navButton:hover {
     font-size: 24px;
     font-weight: bold;
     border: none;
-    border-radius: 8px;
 }
 
-#subHeader {
+#activityLabel {
     color: white;
-    font-size: 18px;
+    font-size: 22px;
     font-weight: bold;
+    border: none;
+}
+
+#overallActivityLabel {
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    border: none;
+}
+
+#oxygenConsumedLabel {
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    border: none;
+}
+
+#missionLengthLabel {
+    color: white;
+    font-size: 22px;
+    font-weight: bold;
+    border: none;
 }
 
 /* Combo Box Styling */
 QComboBox {
     color: #213448;
-    font-size: 18px;
+    font-size: 20px;
     background-color: white;
     border: 1px solid gray;
     padding: 4px;
@@ -75,7 +96,7 @@ QComboBox QAbstractItemView {
 QPushButton {
     background-color: #213448;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 20px;
     color: white;
     border: none;
     padding: 10px;
@@ -230,12 +251,6 @@ QComboBox#introForm QAbstractItemView {
     border: 2px solid #4a90e2; /* Blue border to match the theme */
     border-radius: 10px; /* Rounded corners for a clean look */
     background-color: #f5f7fa; /* Light gray background for the text area */
-}
-
-#activityLabel {
-    color: white;           
-    font-size: 18px;        
-    background-color: transparent;
 }
 
 #bloodOxygenLabel {

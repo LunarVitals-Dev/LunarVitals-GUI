@@ -16,8 +16,11 @@ import os
 import numpy as np
 import logging
 import joblib
+import datetime
 from bluetooth import NordicBLEWorker
 from PySide6.QtWidgets import QLabel, QComboBox, QTextEdit, QFrame
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from data_collection_page import (
     init_data_collection_page,
     update_data_collection_page,
@@ -160,14 +163,14 @@ class AstronautMonitor(QMainWindow):
         self.set_current_activity = set_current_activity.__get__(self)
         self.set_current_activity_label = set_current_activity_label.__get__(self)
        
-      
+        self.current_activity = ""
+        
+        self.activities = ["Idle", "Walking", "Lifting", "Crouching", "Skipping"]
 
         self.init_data_collection_page()
         self.model = None
         self.scaler = None
         self.encoder = None
-        
-        self.current_activity = "Idle"
 
         MONGODB_URI = "mongodb+srv://LunarVitals:lunarvitals1010@peakfitness.i5blp.mongodb.net/"
 
@@ -206,12 +209,12 @@ class AstronautMonitor(QMainWindow):
         self.update_timer.timeout.connect(self.update_home_page)
         self.update_timer.timeout.connect(self.update_current_chart)
         self.update_timer.timeout.connect(self.update_data_collection_page)
-        # Update the page to reflect the new data
-     
+        self.update_timer.timeout.connect(self.update_mission_length)
         self.update_timer.start(1000)
         
         self.prediction_timer = QTimer(self)
         self.prediction_timer.timeout.connect(self.on_new_sensor_data)
+        self.prediction_timer.timeout.connect(self.updateActivityChart)
         self.prediction_timer.start(5000) 
 
         self.current_chart_type = None
@@ -296,7 +299,7 @@ class AstronautMonitor(QMainWindow):
                 
     def update_prediction_display(self, prediction, confidence=None):
         print(f"Prediction: {prediction}")
-        self.activity_label.setText(f"Current Activity: {prediction}")
+        self.activity_label.setText(f"Current Activity: \n {prediction}")
         self.activity_label_data_collection.setText(f"Current Activity: {prediction}")
         if confidence is not None:
             self.confidence_label.setText(f"Confidence: {confidence:.2%}")
@@ -315,9 +318,11 @@ class AstronautMonitor(QMainWindow):
         probs    = self.model.predict(X_scaled)
         idx      = np.argmax(probs, axis=1)[0]
         label    = self.encoder.categories_[0][idx]
+        
+        self.current_activity = label
 
         # update the UI
-        self.update_prediction_display(label)  
+        self.update_prediction_display(label) 
         
     VALID_RANGES = {
         "s_rate":    (0, 205),
@@ -326,7 +331,7 @@ class AstronautMonitor(QMainWindow):
         "Value_mV":  (0, 3300),
         "pulse_BPM": (30, 180),
         "avg_mV":    (0, 3300),
-        "BRPM":      (6, 45)
+        "BRPM":      (0, 45)
     }
 
     def clamp(self, field: str, val: float) -> float:
@@ -435,6 +440,48 @@ class AstronautMonitor(QMainWindow):
         self.central_stack.addWidget(self.data_collection_page)  
         self.create_navbar()
         
+    def update_mission_length(self):
+        elapsed = datetime.datetime.now() - self.mission_start
+        total_seconds = int(elapsed.total_seconds())
+        hrs, rem = divmod(total_seconds, 3600)
+        mins, secs = divmod(rem, 60)
+        self.mission_length_label.setText(
+            f"Mission Length: \n {hrs:02d}:{mins:02d}:{secs:02d}"
+        )
+        
+    def updateActivityChart(self):
+        now       = datetime.datetime.now()
+        deltaSecs = (now - self.lastActivityTime).total_seconds()
+        self.lastActivityTime = now
+        
+        a = self.current_activity
+        self.activityTimes[a] = self.activityTimes.get(a, 0.0) + deltaSecs
+
+        # compute fractions
+        durations = [ self.activityTimes[x] for x in self.activities ]
+        total     = sum(durations)
+        fractions = [ (d/total if total>0 else 0.0) for d in durations ]
+
+        # redraw
+        self.activityAxes.clear()
+        x = np.arange(len(self.activities))
+        self.activityAxes.bar(
+            x, fractions,
+            color="#213448",
+            width=0.6
+        )
+        self.activityAxes.set_xticks(x)
+        self.activityAxes.set_xticklabels(
+            self.activities, rotation=45, ha="right", color="white"
+        )
+        self.activityAxes.set_ylim(0, 1)
+        self.activityAxes.set_ylabel("Fraction of Time", color="white")
+        self.activityAxes.set_title("Overall Activity", color="white")
+        for spine in self.activityAxes.spines.values():
+            spine.set_color("white")
+        self.activityAxes.tick_params(colors="white")
+        self.activityCanvas.draw()
+        
     def switch_to_chart(self, chart_type):
         # Switch to the data page (assuming self.central_stack is your QStackedWidget)
         self.central_stack.setCurrentWidget(self.data_page)
@@ -471,6 +518,14 @@ class AstronautMonitor(QMainWindow):
             value_label.setProperty("class", "sensor-value")
             self.data_labels[sensor_name][key] = value_label
             box_layout.addWidget(value_label)
+            
+        icon_label = QLabel()
+        icon_path  = f"assets/icons/{sensor_name}.png" 
+        pix         = QPixmap(icon_path)
+        pix         = pix.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        icon_label.setPixmap(pix)
+        icon_label.setAlignment(Qt.AlignCenter)
+        box_layout.addWidget(icon_label)
 
         sensor_box.setLayout(box_layout)
         return sensor_box
@@ -493,75 +548,103 @@ class AstronautMonitor(QMainWindow):
 
         self.sensor_config = {
             "PulseSensor": {
-                "display_name": "Heart Rate Monitor",
+                "display_name": "Heart Rate",
                 "measurements": {"pulse_BPM": "Heart (BPM)", "SPO2": "SPO2"},
-                "grid_position": (0, 0),
+                "grid_position": (0, 0, 2, 1),
             },
             "RespRate": {
-                "display_name": "Breathing Rate Monitor",
+                "display_name": "Breathing Rate",
                 "measurements": {"BRPM": "Breathing (breaths/min)"},
-                "grid_position": (1, 0),
+                "grid_position": (2, 0, 2, 1),
             },
             "ObjectTemp": {
                 "display_name": "Body Temperature",
                 "measurements": {"OCelsius": "Temperature (°C)"},
-                "grid_position": (2, 0),
+                "grid_position": (4, 0, 2, 1),
             },
             "Accel": {
                 "display_name": "Rate Of Steps",
                 "measurements": {"s_rate": "Steps (steps/min)"},
-                "grid_position": (0, 4),
+                "grid_position": (0, 4, 2, 1),
             },
             "Gyro": {
                 "display_name": "Rate of Arm Swings",
                 "measurements": {"r_rate": "Rotations (swings/min)"},
-                "grid_position": (1, 4),
+                "grid_position": (2, 4, 2, 1),
             },
             "Pressure": {
                 "display_name": "Atmospheric Pressure",
                 "measurements": {"hPa": "Pressure (hPa)"},
-                "grid_position": (2, 4),
+                "grid_position": (4, 4, 2, 1),
             },
         }
+        
         for name, cfg in self.sensor_config.items():
             box = self.create_sensor_box(name, cfg)
-            r, c = cfg["grid_position"]
-            layout.addWidget(box, r, c)
+            r, c, rs, cs = cfg["grid_position"]
+            layout.addWidget(box, r, c, rs, cs)
 
-        self.activity_label = QLabel("Current Activity: N/A")
+        self.activity_label = QLabel("Current Activity: \n N/A")
         self.activity_label.setObjectName("activityLabel")
         self.activity_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.activity_label, 1, 1)
+        layout.addWidget(self.activity_label, 1, 1, 2, 1)
 
-        self.mission_activity_label = QLabel("Overall Activity: N/A")
-        self.mission_activity_label.setObjectName("overallActivityLabel")
-        self.mission_activity_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.mission_activity_label, 2, 1)
+        fig = Figure(figsize=(3, 2.5), facecolor="none", tight_layout=True)
+        fig.patch.set_alpha(0)
+        self.activityCanvas = FigureCanvas(fig)
+        self.activityCanvas.setStyleSheet("background: transparent")
+        self.activityAxes   = fig.add_subplot(111)
+        self.activityAxes.patch.set_alpha(0)
+        self.activityAxes.set_title("Overall Activity", color="white")
         
-        self.oxygen_consumed_label = QLabel("Oxygen Consumed: N/A")
+        self.activityAxes.set_facecolor("none")
+
+        self.activityAxes.set_xlim(-0.5, len(self.activities)-0.5)
+        self.activityAxes.set_ylim(0, 1)
+
+        self.activityAxes.set_xticks(np.arange(len(self.activities)))
+        self.activityAxes.set_xticklabels(
+            self.activities,
+            rotation=45,
+            ha="right",
+            color="white"
+        )
+
+        self.activityAxes.set_ylabel("Fraction of Time", color="white")
+   
+        for spine in self.activityAxes.spines.values():
+            spine.set_color("white")
+        self.activityAxes.tick_params(colors="white")
+
+        self.activityCanvas.draw()
+        layout.addWidget(self.activityCanvas, 3, 1, 2, 1)
+
+        self.activityTimes  = {a: 0.0 for a in self.activities}
+        self.lastActivityTime = datetime.datetime.now()
+        
+        self.oxygen_consumed_label = QLabel("Oxygen Consumed: \n N/A")
         self.oxygen_consumed_label.setObjectName("oxygenConsumedLabel")
         self.oxygen_consumed_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.oxygen_consumed_label, 1, 3, Qt.AlignCenter)
+        layout.addWidget(self.oxygen_consumed_label, 1, 3, 2, 1)
 
-        self.mission_length_label = QLabel("Mission Length: N/A")
+        self.mission_length_label = QLabel("Mission Length: \n 00:00:00")
         self.mission_length_label.setObjectName("missionLengthLabel")
         self.mission_length_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.mission_length_label, 2, 3, Qt.AlignCenter)
+        layout.addWidget(self.mission_length_label, 3, 3, 2, 1)
 
+        self.mission_start = datetime.datetime.now()
 
         center_image = QLabel()
         center_image.setObjectName("centerImage")
         center_image.setAlignment(Qt.AlignCenter)
         pix = QPixmap("assets/spaceman.png")
-        scaled = pix.scaled(330, 500, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled = pix.scaled(380, 570, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         center_image.setPixmap(scaled)
-        layout.addWidget(center_image, 1, 2, 2, 1, Qt.AlignCenter)
+        layout.addWidget(center_image, 1, 2, 4, 1)
         
         layout.setContentsMargins(5,5,5,5)
-        layout.setHorizontalSpacing(8)
-        layout.setVerticalSpacing(8)
 
-        for row in range(3):
+        for row in range(6):
             layout.setRowStretch(row, 1)
 
         for col in (1, 2, 3):                
