@@ -50,28 +50,21 @@ QPushButton#navButton:hover {
 
 #activityLabel {
     color: white;
-    font-size: 22px;
-    font-weight: bold;
-    border: none;
-}
-
-#overallActivityLabel {
-    color: white;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
     border: none;
 }
 
 #oxygenConsumedLabel {
     color: white;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
     border: none;
 }
 
 #missionLengthLabel {
     color: white;
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
     border: none;
 }
@@ -261,19 +254,6 @@ QComboBox#introForm QAbstractItemView {
     margin-top: 10px;
 }
 
-QLabel#statusLabel[connected="true"] {
-    color: white;
-    font-weight: bold;
-    font-size: 28px;
-}
-
-/* when connected=false */
-QLabel#statusLabel[connected="false"] {
-    color: #A25772;
-    font-weight: bold;
-    font-size: 28px;
-}
-
 /* Normal (green) */
 QLabel#bloodOxygenLabel[status="Normal"] {
     color: green;
@@ -297,4 +277,17 @@ QLabel#bloodOxygenLabel[status="Critical"] {
 /* Not Detected (white) */
 QLabel#bloodOxygenLabel[status="Detecting"] {
     color: white;
+}
+
+QLabel#statusLabel[connected="true"] {
+    color: white;
+    font-weight: bold;
+    font-size: 28px;
+}
+
+/* when connected=false */
+QLabel#statusLabel[connected="false"] {
+    color: #A25772;
+    font-weight: bold;
+    font-size: 28px;
 }
