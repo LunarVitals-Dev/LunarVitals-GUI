@@ -55,6 +55,12 @@ QPushButton#navButton:hover {
     border: none;
 }
 
+#confidenceLabel {
+    color: white;
+    font-size: 22px;
+    border: none;
+}
+
 #oxygenConsumedLabel {
     color: white;
     font-size: 24px;
@@ -290,4 +296,81 @@ QLabel#statusLabel[connected="false"] {
     color: #A25772;
     font-weight: bold;
     font-size: 28px;
+}
+
+/* ── Data Collection Page ────────────────────────────────────── */
+
+QWidget#dataCollectionPage {
+    background-color: #547792;
+    padding: 20px;
+}
+
+QFrame#dataCollectionLeft,
+QFrame#dataCollectionRight {
+    background-color: #547792;
+    border-radius: 12px;
+    padding: 15px;
+    margin: 5px;
+}
+
+QFrame#dataCollectionLeft { 
+    border: 2px solid #94B4C1;  
+}
+QFrame#dataCollectionRight {
+    border: 2px solid #94B4C1; 
+}
+
+/* ── Section Titles ─────────────────────────────────────────── */
+QFrame#dataCollectionLeft QLabel:first-child,
+QFrame#dataCollectionRight QLabel:first-child {
+    font-size: 22px;
+    color: #ffffff;
+    margin-bottom: 10px;
+}
+
+/* ── Status Labels on Left ─────────────────────────────────── */
+QFrame#dataCollectionLeft QLabel {
+    color: white;
+    font-size: 18px;
+    padding: 4px 0;
+}
+
+/* ── Default & Hover ───────────────────────────────────────── */
+QFrame#dataCollectionRight QPushButton {
+    background-color: #547792;
+    color: white;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 16px;
+}
+QFrame#dataCollectionRight QPushButton:hover {
+    background-color: #6a8a9f;    
+}
+
+/* ── Pressed (immediate feedback) ───────────────────────────── */
+QFrame#dataCollectionRight QPushButton:pressed {
+    background-color: #80B1EB;    
+}
+
+/* ── Checked (toggle state) ─────────────────────────────────── */
+QFrame#dataCollectionRight QPushButton:checked {
+    background-color: #80B1EB;    
+    border: 2px solid #008000;   
+}
+
+/* ── Optional: keep text color consistent ───────────────────── */
+QFrame#dataCollectionRight QPushButton:pressed,
+QFrame#dataCollectionRight QPushButton:checked {
+    color: white;
+}
+
+/* ── Output Area ────────────────────────────────────────────── */
+QFrame#dataCollectionRight QTextEdit {
+    background: #547792;
+    border: 1px solid #94B4C1;
+    border-radius: 8px;
+    color: white;
+    font-family: 'Nasalization';
+    font-size: 16px;
 }

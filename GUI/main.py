@@ -28,8 +28,9 @@ from data_collection_page import (
     set_current_activity,
     set_current_activity_label,
     set_current_astronaut,
+    ActivityTracker,
+    ACTIVITY_LABELS
 )
-
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
@@ -167,7 +168,9 @@ class AstronautMonitor(QMainWindow):
        
         self.predicted_activity = ""
         
-        self.activities = ["Idle", "Walking", "Lifting", "Crouching", "Skipping"]
+        self.activities = ACTIVITY_LABELS
+        
+        self.activity_tracker = ActivityTracker(self.activities)
 
         self.init_data_collection_page()
         self.model = None
@@ -304,8 +307,11 @@ class AstronautMonitor(QMainWindow):
         self.activity_label_data_collection.setText(f"Current Activity: {prediction}")
         if confidence is not None:
             self.confidence_label.setText(f"Confidence: {confidence:.2%}")
+            self.confidence_label_data_collection.setText(f"Confidence: {confidence:.2%}")
         
     def on_new_sensor_data(self):
+        if len(self.pulse_BPM) == 0:      
+            return "No Data", 0
 
         avg_bpm    = np.mean(self.pulse_BPM)   if self.pulse_BPM    else 0
         avg_brpm   = np.mean(self.brpm)        if self.brpm         else 0
@@ -319,11 +325,12 @@ class AstronautMonitor(QMainWindow):
         probs    = self.model.predict(X_scaled)
         idx      = np.argmax(probs, axis=1)[0]
         label    = self.encoder.categories_[0][idx]
+        confidence = float(probs[0, idx])
         
         self.predicted_activity = label
 
         # update the UI
-        self.update_prediction_display(label) 
+        self.update_prediction_display(label, confidence) 
         
     VALID_RANGES = {
         "s_rate":    (0, 205),
@@ -450,37 +457,38 @@ class AstronautMonitor(QMainWindow):
         )
         
     def updateActivityChart(self):
-        now       = datetime.datetime.now()
-        deltaSecs = (now - self.lastActivityTime).total_seconds()
-        self.lastActivityTime = now
+        leader = self.activity_tracker.update(self.predicted_activity)
+
+        now = time.time()
+        durations = []
+        for act in self.activities:
+            dur = self.activity_tracker._durations.get(act, 0.0)
+            if act == self.activity_tracker._current and self.activity_tracker._t_start:
+                dur += now - self.activity_tracker._t_start
+            durations.append(dur)
+
+        total = sum(durations)
+        fractions = [(d / total if total else 0.0) for d in durations]
         
-        a = self.predicted_activity
-        self.activityTimes[a] = self.activityTimes.get(a, 0.0) + deltaSecs
-
-        # compute fractions
-        durations = [ self.activityTimes[x] for x in self.activities ]
-        total     = sum(durations)
-        fractions = [ (d/total if total>0 else 0.0) for d in durations ]
-
-        # redraw
-        self.activityAxes.clear()
+        self.activityAxes.set_autoscale_on(False)
+        
+        self.activityAxes.set_xlim(-0.5, len(self.activities) - 0.5)
+        self.activityAxes.set_ylim(0, 1)
+        
         x = np.arange(len(self.activities))
-        self.activityAxes.bar(
-            x, fractions,
-            color="#213448",
-            width=0.6
-        )
+        self.activityAxes.bar(x, fractions, width=0.6)
         self.activityAxes.set_xticks(x)
         self.activityAxes.set_xticklabels(
-            self.activities, rotation=45, ha="right", color="white", fontweight = "bold"
+            self.activities, rotation=45, ha="right", color="white", fontweight="bold"
         )
         self.activityAxes.set_ylim(0, 1)
         self.activityAxes.set_ylabel("Fraction of Time", color="white")
-        self.activityAxes.set_title("Overall Activity", color="white", fontsize = 16, fontweight = "bold")
+        self.activityAxes.set_title("Overall Activity", color="white", fontsize=16, fontweight="bold")
         for spine in self.activityAxes.spines.values():
             spine.set_color("white")
         self.activityAxes.tick_params(colors="white")
         self.activityCanvas.draw()
+
         
     def switch_to_chart(self, chart_type):
         # Switch to the data page (assuming self.central_stack is your QStackedWidget)
@@ -587,11 +595,24 @@ class AstronautMonitor(QMainWindow):
             layout.addWidget(box, r, c, rs, cs)
 
         self.activity_label = QLabel("Current Activity: \n N/A")
+        self.confidence_label = QLabel("Confidence: N/A")
         self.activity_label.setObjectName("activityLabel")
+        self.confidence_label.setObjectName("confidenceLabel")
         self.activity_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.activity_label, 1, 1, 2, 1)
+        self.confidence_label.setAlignment(Qt.AlignCenter)
+        
+        container = QWidget()
+        inner_layout = QVBoxLayout(container)
+        inner_layout.setContentsMargins(5, 5, 5, 5)
+        inner_layout.setSpacing(10)                  
 
-        fig = Figure(figsize=(3, 2.5), facecolor="none", tight_layout=True)
+        inner_layout.addWidget(self.activity_label)
+        inner_layout.addWidget(self.confidence_label)
+        inner_layout.setAlignment(Qt.AlignCenter)
+
+        layout.addWidget(container, 1, 1, 2, 1)
+
+        fig = Figure(figsize=(3, 2.5), facecolor="none", constrained_layout=True)
         fig.patch.set_alpha(0)
         self.activityCanvas = FigureCanvas(fig)
         self.activityCanvas.setStyleSheet("background: transparent")
@@ -600,6 +621,8 @@ class AstronautMonitor(QMainWindow):
         self.activityAxes.set_title("Overall Activity", color="white", fontsize = 16, fontweight = "bold")
         
         self.activityAxes.set_facecolor("none")
+        
+        self.activityAxes.set_autoscale_on(False)
 
         self.activityAxes.set_xlim(-0.5, len(self.activities)-0.5)
         self.activityAxes.set_ylim(0, 1)
@@ -617,9 +640,6 @@ class AstronautMonitor(QMainWindow):
 
         self.activityCanvas.draw()
         layout.addWidget(self.activityCanvas, 3, 1, 2, 1)
-
-        self.activityTimes  = {a: 0.0 for a in self.activities}
-        self.lastActivityTime = datetime.datetime.now()
         
         self.oxygen_consumed_label = QLabel("Oxygen Consumed: \n N/A")
         self.oxygen_consumed_label.setObjectName("oxygenConsumedLabel")
