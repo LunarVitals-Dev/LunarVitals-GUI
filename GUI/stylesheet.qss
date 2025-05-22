@@ -25,7 +25,7 @@ QPushButton#navButton {
     border: none;               /* no border */
     color: #94B4C1;               /* white text */
     padding: 8px 16px;          /* optional spacing */
-    font-size: 22px;
+    font-size: 24px;
     font-weight: bold;
 }
 
@@ -43,24 +43,42 @@ QPushButton#navButton:hover {
 /* Headers */
 #pageHeader {
     color: white;
-    font-size: 40px;
+    font-size: 24px;
     font-weight: bold;
-    margin: 10px 0;
-    padding: 12px;
     border: none;
-    border-radius: 8px;
 }
 
-#subHeader {
+#activityLabel {
     color: white;
-    font-size: 18px;
+    font-size: 24px;
     font-weight: bold;
+    border: none;
+}
+
+#confidenceLabel {
+    color: white;
+    font-size: 22px;
+    border: none;
+}
+
+#oxygenConsumedLabel {
+    color: white;
+    font-size: 24px;
+    font-weight: bold;
+    border: none;
+}
+
+#missionLengthLabel {
+    color: white;
+    font-size: 24px;
+    font-weight: bold;
+    border: none;
 }
 
 /* Combo Box Styling */
 QComboBox {
     color: #213448;
-    font-size: 18px;
+    font-size: 20px;
     background-color: white;
     border: 1px solid gray;
     padding: 4px;
@@ -77,7 +95,7 @@ QComboBox QAbstractItemView {
 QPushButton {
     background-color: #213448;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 20px;
     color: white;
     border: none;
     padding: 10px;
@@ -100,7 +118,6 @@ QPushButton:hover {
     font-weight: bold;
     font-size: 58px;
     padding: 2px;
-    
 }
 
 /* Sensor Box Styling - Now Visible */
@@ -108,9 +125,9 @@ QPushButton:hover {
     font-weight: bold;
     background-color: #94B4C1; /* Light gray background */
     border: 0px solid white; /* Blue border */
+    margin: 0; 
     border-radius: 10px; /* Rounded corners */
-    padding: 15px;
-    margin: 10px;
+    min-width: 0;
 }
 
 .sensor-title-button {
@@ -119,8 +136,8 @@ QPushButton:hover {
 
 /* Sensor Values */
 .sensor-value {
-    font-size: 24px;
-    font-weight: light;
+    font-size: 18px;
+    font-weight: bold;
     color: #213448;
     qproperty-alignment: 'AlignCenter';
 }
@@ -130,13 +147,11 @@ QPushButton:hover {
     border: 0px solid #4a90e2;
     background-color: #213448;
     border-radius: 10px;
-    padding: 15px;
-    margin: 10px;
 }
 
 /* Grid Layout Spacing */
 QGridLayout {
-    spacing: 20px;
+    spacing: 10px;
 }
 
 
@@ -237,23 +252,35 @@ QComboBox#introForm QAbstractItemView {
     background-color: #f5f7fa; /* Light gray background for the text area */
 }
 
-#activityLabel {
-    color: white;           
-    font-size: 20px;        
+#bloodOxygenLabel {
+    color: #213448;          
+    font-size: 18px;         
     font-weight: bold;
     background-color: transparent;
+    margin-top: 10px;
 }
 
-#bloodOxygenLabel {
-    color: white;          
-    font-size: 20px;         
-    font-weight: bold;
-    background-color: transparent;
-    margin-top: 20px;
+/* Normal (green) */
+QLabel#bloodOxygenLabel[status="Normal"] {
+    color: green;
+}
+
+/* Concerning (yellow) */
+QLabel#bloodOxygenLabel[status="Concerning"] {
+    color: yellow;
+}
+
+/* Critical (blood-red) */
+QLabel#bloodOxygenLabel[status="Critical"] {
+    color: darkred;
+}
+
+QLabel#bloodOxygenLabel[status="Detecting"] {
+    color: #213448;
 }
 
 QLabel#statusLabel[connected="true"] {
-    color: white;
+    color: green;
     font-weight: bold;
     font-size: 28px;
 }
@@ -263,4 +290,84 @@ QLabel#statusLabel[connected="false"] {
     color: #A25772;
     font-weight: bold;
     font-size: 28px;
+}
+
+/* ── Data Collection Page ────────────────────────────────────── */
+
+QWidget#dataCollectionPage {
+    background-color: #547792;
+    padding: 20px;
+}
+
+QFrame#dataCollectionLeft,
+QFrame#dataCollectionRight {
+    background-color: #547792;
+    border-radius: 12px;
+    padding: 15px;
+    margin: 5px;
+}
+
+QFrame#dataCollectionLeft { 
+    border: 2px solid #94B4C1;  
+}
+QFrame#dataCollectionRight {
+    border: 2px solid #94B4C1; 
+}
+
+/* ── Section Titles ─────────────────────────────────────────── */
+QFrame#dataCollectionLeft QLabel:first-child,
+QFrame#dataCollectionRight QLabel:first-child {
+    font-size: 22px;
+    color: white;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+/* ── Status Labels on Left ─────────────────────────────────── */
+QFrame#dataCollectionLeft QLabel {
+    color: white;
+    font-size: 18px;
+    padding: 4px 0;
+}
+
+/* ── Default & Hover ───────────────────────────────────────── */
+QFrame#dataCollectionRight QPushButton {
+    background-color: #213448;
+    color: white;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 16px;
+}
+
+QFrame#dataCollectionLeft QPushButton:hover,
+QFrame#dataCollectionRight QPushButton:hover {
+    background-color: #6a8a9f;    
+}
+
+/* ── Pressed (immediate feedback) ───────────────────────────── */
+QFrame#dataCollectionRight QPushButton:pressed {
+    background-color: #213448;    
+}
+
+/* ── Checked (toggle state) ─────────────────────────────────── */
+QFrame#dataCollectionRight QPushButton:checked {
+    background-color: #213448;    
+    border: 2px solid #008000;   
+}
+
+/* ── Optional: keep text color consistent ───────────────────── */
+QFrame#dataCollectionRight QPushButton:pressed,
+QFrame#dataCollectionRight QPushButton:checked {
+    color: white;
+}
+
+/* ── Output Area ────────────────────────────────────────────── */
+QFrame#dataCollectionRight QTextEdit {
+    background: #547792;
+    border: 1px solid #94B4C1;
+    border-radius: 8px;
+    color: white;
+    font-family: 'Nasalization';
+    font-size: 16px;
 }

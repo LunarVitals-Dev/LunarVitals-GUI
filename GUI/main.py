@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QToolBar,
     QHBoxLayout, QPushButton, QComboBox, QStackedWidget, QGridLayout, QFrame,
-    QFormLayout, QLineEdit
+    QFormLayout, QLineEdit, QSizePolicy
 )
 from PySide6.QtGui import QFontDatabase, QFont 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
@@ -16,8 +16,11 @@ import os
 import numpy as np
 import logging
 import joblib
+import datetime
 from bluetooth import NordicBLEWorker
 from PySide6.QtWidgets import QLabel, QComboBox, QTextEdit, QFrame
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from data_collection_page import (
     init_data_collection_page,
     update_data_collection_page,
@@ -25,9 +28,9 @@ from data_collection_page import (
     set_current_activity,
     set_current_activity_label,
     set_current_astronaut,
-
+    ActivityTracker,
+    ACTIVITY_LABELS
 )
-
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 
@@ -136,15 +139,16 @@ class IntroPage(QWidget):
 
 
 class AstronautMonitor(QMainWindow):
-    #NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A"
+    # NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A" #Test device
     NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    # NORDIC_DEVICE_MAC = "CE:E6:D8:57:34:F0" #Final device 
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
     def __init__(self, name, gender, age, weight):
         super().__init__()
         
-        self.peak_lines = []
+        self.data_labels = {}
         self.astronaut_name = name
         self.astronaut_gender = gender
         self.astronaut_age = age
@@ -160,15 +164,19 @@ class AstronautMonitor(QMainWindow):
         self.create_data_labels = create_data_labels.__get__(self)
         self.set_current_activity = set_current_activity.__get__(self)
         self.set_current_activity_label = set_current_activity_label.__get__(self)
+        
+        self.current_activity = "Idle"
        
-      
+        self.predicted_activity = ""
+        
+        self.activities = ACTIVITY_LABELS
+        
+        self.activity_tracker = ActivityTracker(self.activities)
 
         self.init_data_collection_page()
         self.model = None
         self.scaler = None
         self.encoder = None
-        
-        self.current_activity = "Idle"
 
         MONGODB_URI = "mongodb+srv://LunarVitals:lunarvitals1010@peakfitness.i5blp.mongodb.net/"
 
@@ -189,6 +197,7 @@ class AstronautMonitor(QMainWindow):
 
         self.init_data_buffers()
         
+        self.initUI()
         self.setup_ble_worker()
         
         # Create and use an instance of MLManager to load the artifacts.
@@ -196,7 +205,6 @@ class AstronautMonitor(QMainWindow):
         self.ml_manager.artifacts_ready.connect(self.on_artifacts_ready)
         self.ml_manager.load_artifacts()
 
-        self.initUI()
         self.mongo_upload_enabled = False
         self.mongo_buffer = []
         
@@ -207,17 +215,15 @@ class AstronautMonitor(QMainWindow):
         self.update_timer.timeout.connect(self.update_home_page)
         self.update_timer.timeout.connect(self.update_current_chart)
         self.update_timer.timeout.connect(self.update_data_collection_page)
-        # Update the page to reflect the new data
-     
+        self.update_timer.timeout.connect(self.update_mission_length)
         self.update_timer.start(1000)
         
         self.prediction_timer = QTimer(self)
         self.prediction_timer.timeout.connect(self.on_new_sensor_data)
+        self.prediction_timer.timeout.connect(self.updateActivityChart)
         self.prediction_timer.start(5000) 
 
         self.current_chart_type = None
-
-        # print(f"Astronaut Profile - Name: {self.astronaut_name}, Gender: {self.astronaut_gender}, Age: {self.astronaut_age}")
     
     def on_artifacts_ready(self, model, scaler, encoder):
         # This slot is called when the MLManager has loaded your artifacts.
@@ -259,17 +265,11 @@ class AstronautMonitor(QMainWindow):
         self.pulse_BPM = deque(maxlen=5)
         
     def flush_mongo_buffer(self):
-                         # Log the content of the buffer before insertion
-
         if not self.mongo_upload_enabled:
-         
-            self.mongo_buffer = []  # Clear it anyway to avoid memory buildup
+            self.mongo_buffer = []  
             return
-
         if self.mongo_buffer:
             try:
-
-
                 self.collection.insert_many(self.mongo_buffer)
                 #self.mongo_output_area.append(f"Inserted {len(self.mongo_buffer)} records successfully.\n")
                 self.mongo_buffer = []
@@ -277,7 +277,6 @@ class AstronautMonitor(QMainWindow):
                 logging.error(f"Error inserting into MongoDB: {e}")
                 self.mongo_output_area.append(f"Upload Error: {str(e)}")
 
-                
     def update_blood_oxygen(self, SPO2):
         self.spo2_buffer.append(SPO2)
         SPO2 = np.median(self.spo2_buffer)
@@ -285,52 +284,70 @@ class AstronautMonitor(QMainWindow):
             status = "Normal"
         elif SPO2 > 90:
             status = "Concerning"
-        elif SPO2 > 85:
-            status = "Low"
         elif SPO2 == 0:
-            status = "Not Detected"
+            status = "Detecting"
         else:
             status = "Critical"
 
-        self.blood_oxygen_label.setText(f"SpO2: {status}")
+        self.blood_oxygen_label.setText(f"SPO2: {status}")
+        # Set the dynamic property
+        self.blood_oxygen_label.setProperty("status", status)
+        self.blood_oxygen_label.setObjectName("bloodOxygenLabel")
 
-    
+        # Re-apply style so Qt notices the property change
+        self.blood_oxygen_label.style().unpolish(self.blood_oxygen_label)
+        self.blood_oxygen_label.style().polish(self.blood_oxygen_label)
+        self.blood_oxygen_label.update()
 
                 
     def update_prediction_display(self, prediction, confidence=None):
-        print(f"prediction {prediction}")
-        self.activity_label.setText(f"Current Activity: {prediction}")
-        self.activity_label_data_collection.setText(f"Current Activity: {prediction}")
-        if confidence is not None:
-            self.confidence_label.setText(f"Confidence: {confidence:.2%}")
+        self.activity_label.setText(f"Current Activity:\n{prediction}")
+        self.confidence_label.setText(f"Confidence: {confidence:.0%}")
         
     def on_new_sensor_data(self):
+        if len(self.pulse_BPM) == 0:
+            return "No Data", 0
 
-        # compute the 10‑s averages
-        avg_bpm  = np.mean(self.pulse_BPM)
-        avg_brpm = np.mean(self.brpm)
-        body_temp = np.mean(self.obj_temp)
-        step_rate = np.mean(self.step_rate)
-        rotate_rate = np.mean(self.rotate_rate)
+        # 1) Compute your feature vector
+        avg_bpm     = np.mean(self.pulse_BPM)    if self.pulse_BPM    else 0
+        avg_brpm    = np.mean(self.brpm)         if self.brpm         else 0
+        body_temp   = np.mean(self.obj_temp)     if self.obj_temp     else 0.0
+        step_rate   = np.mean(self.step_rate)    if self.step_rate    else 0
+        rotate_rate = np.mean(self.rotate_rate)  if self.rotate_rate  else 0
 
-        # scale, predict, decode
+        # 2) Scale & predict
         X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
         X_scaled = self.scaler.transform(X_new)
-        probs    = self.model.predict(X_scaled)
-        idx      = np.argmax(probs, axis=1)[0]
-        label    = self.encoder.categories_[0][idx]
+        raw_probs = self.model.predict(X_scaled)[0]           
+        labels    = self.encoder.categories_[0]         
 
-        # update the UI
-        self.update_prediction_display(label)  
+        # 3) Build full confidence dict
+        conf_dict = {lbl: float(p) for lbl, p in zip(labels, raw_probs)}
+
+        # 4) Extract the best‐predicted label + its confidence
+        best_idx    = int(raw_probs.argmax())
+        best_label  = labels[best_idx]
+        best_conf   = raw_probs[best_idx]
+        self.predicted_activity = best_label
+
+        self.update_prediction_display(best_label, best_conf)
+
+        items = [f"{lbl}: {conf_dict[lbl]:.0%}" for lbl in labels]
+        first_line  = ", ".join(items[:3])
+        second_line = ", ".join(items[3:])
+
+        conf_str = f"{first_line}\n{second_line}"
+        self.confidence_label_data_collection.setText(conf_str)
+
         
     VALID_RANGES = {
         "s_rate":    (0, 205),
         "r_rate":    (0, 210),
         "OCelsius":  (10.0, 45.0),
         "Value_mV":  (0, 3300),
-        "pulse_BPM": (30, 180),
+        "pulse_BPM": (0, 180),
         "avg_mV":    (0, 3300),
-        "BRPM":      (6, 48)
+        "BRPM":      (0, 45)
     }
 
     def clamp(self, field: str, val: float) -> float:
@@ -410,7 +427,6 @@ class AstronautMonitor(QMainWindow):
             # merge in the flat CSV data
             doc.update(data)
 
-                    
             self.mongo_output_area.append(f"{doc}\n")
             self.mongo_buffer.append(doc)
             
@@ -429,6 +445,9 @@ class AstronautMonitor(QMainWindow):
         self.data_collection_page = QWidget()
         
         self.init_home_page()
+        
+        self.blood_oxygen_label = self.data_labels["PulseSensor"]["SPO2"]
+        
         self.init_data_page() 
         self.init_about_page()
         self.init_data_collection_page()
@@ -439,6 +458,51 @@ class AstronautMonitor(QMainWindow):
         self.central_stack.addWidget(self.data_collection_page)  
         self.create_navbar()
         
+    def update_mission_length(self):
+        elapsed = datetime.datetime.now() - self.mission_start
+        total_seconds = int(elapsed.total_seconds())
+        hrs, rem = divmod(total_seconds, 3600)
+        mins, secs = divmod(rem, 60)
+        self.mission_length_label.setText(
+            f"Mission Length: \n {hrs:02d}:{mins:02d}:{secs:02d}"
+        )
+        
+    def updateActivityChart(self):
+        leader = self.activity_tracker.update(self.predicted_activity)
+
+        now = time.time()
+        durations = []
+        for act in self.activities:
+            dur = self.activity_tracker._durations.get(act, 0.0)
+            if act == self.activity_tracker._current and self.activity_tracker._t_start:
+                dur += now - self.activity_tracker._t_start
+            durations.append(dur)
+
+        total = sum(durations)
+        fractions = [(d / total if total else 0.0) for d in durations]
+        
+        self.activityAxes.clear()
+        
+        self.activityAxes.set_autoscale_on(False)
+        
+        self.activityAxes.set_xlim(-0.5, len(self.activities) - 0.5)
+        self.activityAxes.set_ylim(0, 1)
+        
+        x = np.arange(len(self.activities))
+        self.activityAxes.bar(x, fractions, width=0.6, color="#213448", edgecolor="white")    
+        self.activityAxes.set_xticks(x)
+        self.activityAxes.set_xticklabels(
+            self.activities, rotation=45, ha="right", color="white", fontweight="bold"
+        )
+        self.activityAxes.set_ylim(0, 1)
+        self.activityAxes.set_ylabel("Fraction of Time", color="white")
+        self.activityAxes.set_title("Overall Activity", color="white", fontsize=16, fontweight="bold")
+        for spine in self.activityAxes.spines.values():
+            spine.set_color("white")
+        self.activityAxes.tick_params(colors="white")
+        self.activityCanvas.draw()
+
+        
     def switch_to_chart(self, chart_type):
         # Switch to the data page (assuming self.central_stack is your QStackedWidget)
         self.central_stack.setCurrentWidget(self.data_page)
@@ -448,6 +512,9 @@ class AstronautMonitor(QMainWindow):
     def create_sensor_box(self, sensor_name, config):
         # Create a container for the sensor box.
         sensor_box = QFrame()
+        sensor_box.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        sensor_box.setMinimumWidth(0)
+        sensor_box.setMinimumHeight(0) 
         sensor_box.setObjectName("sensorBox")
         sensor_box.setProperty("class", "sensor-box")
 
@@ -456,7 +523,6 @@ class AstronautMonitor(QMainWindow):
         title_button = QPushButton(config['display_name'])
         title_button.setProperty("class", "sensor-title-button")
         
-        # Get the chart type (if any) for routing.
         chart_type = self.sensor_to_chart_type.get(sensor_name)
         if chart_type:
             # Use a helper to capture chart_type for this sensor.
@@ -465,95 +531,156 @@ class AstronautMonitor(QMainWindow):
             title_button.clicked.connect(make_callback(chart_type))
         box_layout.addWidget(title_button)
         
-        # Create measurement label(s). For Blood Oxygen, it will be the only widget.
         self.data_labels[sensor_name] = {}
         for key, display_name in config['measurements'].items():
-            value_label = QLabel(f"{display_name}: N/A")
+            value_label = QLabel(f"N/A {display_name}")
+                
             value_label.setProperty("class", "sensor-value")
             self.data_labels[sensor_name][key] = value_label
             box_layout.addWidget(value_label)
+            
+        icon_label = QLabel()
+        icon_path  = f"assets/icons/{sensor_name}.png" 
+        pix         = QPixmap(icon_path)
+        pix         = pix.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        icon_label.setPixmap(pix)
+        icon_label.setAlignment(Qt.AlignCenter)
+        box_layout.addWidget(icon_label)
 
         sensor_box.setLayout(box_layout)
         return sensor_box
         
     def init_home_page(self):
+        self.sensor_to_chart_type = {
+            "PulseSensor": "pulse",
+            "RespRate":    "resp",
+            "Accel":       "accel",
+            "Gyro":        "gyro",
+            "ObjectTemp":  "temp",
+            "Pressure":    "pressure",
+        }
         layout = QGridLayout()
 
-        self.data_labels = {}
+        header_label = QLabel(f"Astronaut {self.astronaut_name}'s Live Vitals")
+        header_label.setObjectName("pageHeader")
+        header_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(header_label, 0, 2)
 
-        # Sensor display configuration
         self.sensor_config = {
             "PulseSensor": {
-                "display_name": "Heart Rate Monitor",
-                "measurements": {"pulse_BPM": "Heart Rate (BPM)"},
-                "grid_position": (1, 0)  
+                "display_name": "Heart Rate and SPO2",
+                "measurements": {"pulse_BPM": "BPM", "SPO2": "SPO2"},
+                "grid_position": (0, 0, 2, 1),
             },
             "RespRate": {
-                "display_name": "Breathing Rate Monitor",
-                "measurements": {"BRPM": "Breathing Rate (breaths/min)"},
-                "grid_position": (2, 0)
+                "display_name": "Breathing Rate",
+                "measurements": {"BRPM": "breaths/min"},
+                "grid_position": (2, 0, 2, 1),
             },
             "ObjectTemp": {
                 "display_name": "Body Temperature",
-                "measurements": {"OCelsius": "Temperature (°C)"},
-                "grid_position": (3, 0)  
+                "measurements": {"OCelsius": "°C"},
+                "grid_position": (4, 0, 2, 1),
             },
             "Accel": {
                 "display_name": "Rate Of Steps",
-                "measurements": {"s_rate": "Step Rate (steps/min)"},
-                "grid_position": (1, 2)
+                "measurements": {"s_rate": "steps/min"},
+                "grid_position": (0, 4, 2, 1),
             },
             "Gyro": {
                 "display_name": "Rate of Arm Swings",
-                "measurements": {"r_rate": "Rotation Rate (swings/min)"},
-                "grid_position": (2, 2)
+                "measurements": {"r_rate": "swings/min"},
+                "grid_position": (2, 4, 2, 1),
             },
             "Pressure": {
-                "display_name": "Atmospheric Pressure",
-                "measurements": {"hPa": "Pressure (hPa)"},
-                "grid_position": (3, 2)
+                "display_name": "Barometric Pressure",
+                "measurements": {"hPa": "hPa"},
+                "grid_position": (4, 4, 2, 1),
             },
         }
         
-        # Maps sensor_name to chart type string for update_chart
-        self.sensor_to_chart_type = {
-            "PulseSensor": "pulse",
-            "RespRate": "resp",
-            "Accel": "accel",
-            "Gyro": "gyro",
-            "ObjectTemp": "temp",
-            "Pressure": "pressure", 
-        }
+        for name, cfg in self.sensor_config.items():
+            box = self.create_sensor_box(name, cfg)
+            r, c, rs, cs = cfg["grid_position"]
+            layout.addWidget(box, r, c, rs, cs)
 
-        # Create sensor boxes using the helper function
-        for sensor_name, config in self.sensor_config.items():
-            sensor_box = self.create_sensor_box(sensor_name, config)
-            row, col = config['grid_position']
-            layout.addWidget(sensor_box, row, col)
+        self.activity_label = QLabel("Current Activity: \n N/A")
+        self.confidence_label = QLabel("Confidence: N/A")
+        self.activity_label.setObjectName("activityLabel")
+        self.confidence_label.setObjectName("confidenceLabel")
+        self.activity_label.setAlignment(Qt.AlignCenter)
+        self.confidence_label.setAlignment(Qt.AlignCenter)
+        
+        container = QWidget()
+        inner_layout = QVBoxLayout(container)
+        inner_layout.setContentsMargins(5, 5, 5, 5)
+        inner_layout.setSpacing(10)                  
 
-               # Create astronaut image
+        inner_layout.addWidget(self.activity_label)
+        inner_layout.addWidget(self.confidence_label)
+        inner_layout.setAlignment(Qt.AlignCenter)
+
+        layout.addWidget(container, 1, 1, 2, 1)
+
+        fig = Figure(figsize=(3, 2.5), facecolor="none", constrained_layout=True)
+        fig.patch.set_alpha(0)
+        self.activityCanvas = FigureCanvas(fig)
+        self.activityCanvas.setStyleSheet("background: transparent")
+        self.activityAxes   = fig.add_subplot(111)
+        self.activityAxes.patch.set_alpha(0)
+        self.activityAxes.set_title("Overall Activity", color="white", fontsize = 16, fontweight = "bold")
+        
+        self.activityAxes.set_facecolor("none")
+        
+        self.activityAxes.set_autoscale_on(False)
+
+        self.activityAxes.set_xlim(-0.5, len(self.activities)-0.5)
+        self.activityAxes.set_ylim(0, 1)
+
+        self.activityAxes.set_xticks(np.arange(len(self.activities)))
+        self.activityAxes.set_xticklabels(
+            self.activities, rotation=45, ha="right", color="white", fontweight = "bold"
+        )
+
+        self.activityAxes.set_ylabel("Fraction of Time", color="white")
+   
+        for spine in self.activityAxes.spines.values():
+            spine.set_color("white")
+        self.activityAxes.tick_params(colors="white")
+
+        self.activityCanvas.draw()
+        layout.addWidget(self.activityCanvas, 3, 1, 2, 1)
+        
+        self.oxygen_consumed_label = QLabel("Oxygen Consumed: \n N/A")
+        self.oxygen_consumed_label.setObjectName("oxygenConsumedLabel")
+        self.oxygen_consumed_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.oxygen_consumed_label, 1, 3, 2, 1)
+
+        self.mission_length_label = QLabel("Mission Length: \n 00:00:00")
+        self.mission_length_label.setObjectName("missionLengthLabel")
+        self.mission_length_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self.mission_length_label, 3, 3, 2, 1)
+
+        self.mission_start = datetime.datetime.now()
+
         center_image = QLabel()
         center_image.setObjectName("centerImage")
         center_image.setAlignment(Qt.AlignCenter)
-        pixmap = QPixmap('assets/spaceman.png')
-        scaled = pixmap.scaled(
-            400, 600,
-            Qt.KeepAspectRatio,
-            Qt.SmoothTransformation
-        )
+        pix = QPixmap("assets/spaceman.png")
+        scaled = pix.scaled(380, 570, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         center_image.setPixmap(scaled)
+        layout.addWidget(center_image, 1, 2, 4, 1)
         
-        layout.addWidget(center_image, 1, 1, 3, 1, Qt.AlignCenter)
+        layout.setContentsMargins(5,5,5,5)
 
-        self.activity_label = QLabel("Current Activity: N/A")
-        self.activity_label.setObjectName("activityLabel")
-        self.activity_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.activity_label, 1, 1)
-        
-        self.blood_oxygen_label = QLabel("Blood Oxygen: N/A")
-        self.blood_oxygen_label.setObjectName("bloodOxygenLabel")
-        self.blood_oxygen_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.blood_oxygen_label, 3, 1)
+        for row in range(6):
+            layout.setRowStretch(row, 1)
+
+        for col in (1, 2, 3):                
+            layout.setColumnStretch(col, 1)
+            
+        layout.setColumnStretch(0, 0)
+        layout.setColumnStretch(4, 0)
 
         self.home_page.setLayout(layout)
 
@@ -567,6 +694,9 @@ class AstronautMonitor(QMainWindow):
                     continue
 
                 raw = self.latest_data[field]
+                
+                if field == "SPO2":
+                    continue
 
                 if isinstance(raw, float):
                     if raw.is_integer():
@@ -577,7 +707,8 @@ class AstronautMonitor(QMainWindow):
                     s = str(raw)
 
                 label = self.data_labels[sensor_name][field]
-                label.setText(f"{disp}: {s}")
+                label.setText(f"{s} {disp}")
+                
 
     def update_data_collection_page(self):
         if not hasattr(self, 'latest_data'):
@@ -599,38 +730,10 @@ class AstronautMonitor(QMainWindow):
 
             label.setText(f"{raw}")
 
-    # def set_current_activity(self, activity):
-    #     # Uncheck all buttons
-    #     for button in self.activity_buttons.values():
-    #         button.setChecked(False)
-
-    #     # Check the selected button
-    #     self.activity_buttons[activity].setChecked(True)
-
-    #     # Set the current activity
-    #     self.current_activity = activity
-    #     #print(f"Current activity set to: {self.current_activity}")
-
 
     def init_data_page(self):
         layout = QVBoxLayout()
-        # activity_layout = QHBoxLayout()
-        
-        # ACTIVITIES = ["Idle", "Walking", "Skipping", "Lifting", "Crouching"]
-
-        # # Create individual buttons for each activity
-        # self.activity_buttons = {}
-        # for activity in ACTIVITIES:
-        #     button = QPushButton(activity)
-        #     button.setCheckable(True)  # Make the button toggleable
-        #     button.clicked.connect(lambda checked, act=activity: self.set_current_activity(act))
-        #     self.activity_buttons[activity] = button
-        #     activity_layout.addWidget(button)
-
-        # # Create a widget to hold the activity layout
-        # activity_widget = QWidget()
-        # activity_widget.setLayout(activity_layout)
-
+ 
         # Create a horizontal layout to center the activity widget
         centered_layout = QHBoxLayout()
         centered_layout.addStretch()
@@ -689,18 +792,6 @@ class AstronautMonitor(QMainWindow):
         self.about_page = QWidget()
         self.about_page.setLayout(layout)
         self.about_page.setObjectName("aboutPage")
-
-    # def create_data_labels(self, right_section):
-    #     # Example fields to show on the page
-    #     data_fields = [
-    #         "ACelsius", "BRPM", "Value_mV", "SPO2", "pulse_BPM", "r_rate", "s_rate"
-    #     ]
-
-    #     # Add a label for each field to right_section and store them in mongo_data_labels
-    #     for field in data_fields:
-    #         label = QLabel(f"{field}: N/A")
-    #         self.mongo_data_labels[field] = label
-    #         right_section.addWidget(label)
 
    
 
@@ -881,15 +972,11 @@ class AstronautMonitor(QMainWindow):
     def toggle_upload_to_mongo(self):
         self.mongo_upload_enabled = not self.mongo_upload_enabled
         if self.mongo_upload_enabled:
-            self.upload_toggle.setText("MongoDB: ON")
-
             self.upload_status.setText("Upload Status: <font color='green'>ON</font>")
             self.upload_toggle_button_data_collection.setText("Stop Upload")
             self.upload_start_time = time.time()
             self.upload_label_counts.clear()
-        else:
-            self.upload_toggle.setText("MongoDB: OFF")
-            
+        else: 
             self.upload_status.setText("Upload Status: <font color='red'>OFF</font>")
             self.upload_toggle_button_data_collection.setText("Start Upload")
             self.upload_start_time = None
@@ -918,7 +1005,6 @@ class AstronautMonitor(QMainWindow):
         data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
         right_layout.addWidget(data_button)
 
-        
         data_collection_button = QPushButton("Data Collection")
         data_collection_button.setObjectName("navButton")
         data_collection_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_collection_page))
@@ -941,14 +1027,6 @@ class AstronautMonitor(QMainWindow):
         self.status_label = QLabel("Status: Disconnected")
         self.status_label.setObjectName("statusLabel")
         navbar_layout.addWidget(self.status_label)
-
-        self.upload_toggle = QPushButton("MongoDB: OFF")
-        self.upload_toggle.setCheckable(True)
-        self.upload_toggle.setChecked(False)
-        self.upload_toggle.setObjectName("navButton")
-        self.upload_toggle.clicked.connect(self.toggle_upload_to_mongo)
-        right_layout.addWidget(self.upload_toggle)
-
 
     def closeEvent(self, event):
         self.ble_worker.stop()
