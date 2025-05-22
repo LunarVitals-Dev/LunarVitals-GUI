@@ -118,12 +118,13 @@ def init_data_collection_page(self):
 
     self.label_buttons = {}
     activity_labels = ACTIVITY_LABELS
-
     button_layout = QGridLayout()
 
     for i, label in enumerate(activity_labels):
         button = QPushButton()
         button.setCheckable(True)
+        button.setText(label)
+        button.setStyleSheet("padding: 10px; font-weight: bold; font-size: 16px;")
         button.clicked.connect(lambda checked, l=label: self.set_current_activity_label(l))
         self.label_buttons[label] = button
         button_layout.addWidget(button, i // 2, i % 2)
@@ -141,7 +142,6 @@ def init_data_collection_page(self):
 
     main_layout.addWidget(left_frame, 1)
 
-
     divider = QFrame()
     divider.setFrameShape(QFrame.Shape.VLine)
     divider.setFrameShadow(QFrame.Shadow.Sunken)
@@ -157,6 +157,7 @@ def set_current_astronaut(self, name, gender, age, weight):
     self.astronaut_gender = gender
     self.astronaut_age = age
     self.astronaut_weight = weight
+    # print(f"Astronaut set to: {name}, {gender}, {age} y/o, {weight} lb")
 
     # Highlight selected button
     for n, btn in self.astronaut_buttons.items():
@@ -193,6 +194,7 @@ def update_data_collection_page(self):
 def create_data_labels(self, layout):
     self.mongo_data_labels = {}  # Empty dict to be populated after first data update
     self.data_labels_layout = layout  # Save for later dynamic population
+
 
 def set_current_activity(self, activity):
     self.current_activity = activity
