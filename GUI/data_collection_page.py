@@ -61,14 +61,25 @@ def init_data_collection_page(self):
     lf.addWidget(QLabel("<b>ML Prediction Status</b>"))
     self.activity_label_data_collection = QLabel("Current Activity: N/A")
     lf.addWidget(self.activity_label_data_collection)
-    self.confidence_label_data_collection = QLabel("Confidence: N/A")
+    
+    items = [f"{lbl}: N/A" for lbl in ACTIVITY_LABELS]
+
+    init_conf = f"{', '.join(items[:3])}\n{', '.join(items[3:])}"
+
+    self.confidence_label_data_collection = QLabel(init_conf)
+    self.confidence_label_data_collection.setWordWrap(True)
+
     lf.addWidget(self.confidence_label_data_collection)
-    lf.addSpacing(10)
-    lf.addWidget(QLabel("<b>Upload Stats</b>"))
+    lf.addSpacing(20)
+    
+    self.upload_status = QLabel("Upload Status: <font color='red'>OFF</font>")
+    lf.addWidget(self.upload_status)
+    self.upload_toggle_button_data_collection = QPushButton("Start Upload")
+    self.upload_toggle_button_data_collection.setCheckable(True)
+    self.upload_toggle_button_data_collection.clicked.connect(self.toggle_upload_to_mongo)
+    lf.addWidget(self.upload_toggle_button_data_collection)
     self.upload_duration_label = QLabel("Duration: 0s")
     lf.addWidget(self.upload_duration_label)
-    self.activity_distribution_label = QLabel("Activity Breakdown: N/A")
-    lf.addWidget(self.activity_distribution_label)
     lf.addStretch()
 
 
@@ -97,7 +108,7 @@ def init_data_collection_page(self):
         btn = QPushButton(name)
         btn.setCheckable(True)
         btn.clicked.connect(lambda checked, n=name, g=gender, a=age, w=weight: self.set_current_astronaut(n, g, a, w))
-        btn.setStyleSheet("padding: 6px; font-size: 14px; font-weight: bold;")
+        btn.setStyleSheet("padding: 6px; font-size: 16px; font-weight: bold;")
         self.astronaut_buttons[name] = btn
         astro_layout.addWidget(btn)
 
@@ -112,28 +123,18 @@ def init_data_collection_page(self):
     for i, label in enumerate(activity_labels):
         button = QPushButton()
         button.setCheckable(True)
-        # button.setIcon(QIcon(f"assets/{label.lower()}.png"))  # Make sure you have icons named idle.png, walking.png, etc.
-        # button.setIconSize(QSize(64, 64))
         button.setText(label)
-        button.setStyleSheet("padding: 10px; font-weight: bold; font-size: 14px;")
+        button.setStyleSheet("padding: 10px; font-weight: bold; font-size: 16px;")
         button.clicked.connect(lambda checked, l=label: self.set_current_activity_label(l))
         self.label_buttons[label] = button
         button_layout.addWidget(button, i // 2, i % 2)
 
     rf.addLayout(button_layout)
 
-    self.upload_status = QLabel("Upload Status: <font color='red'>OFF</font>")
-    rf.addWidget(self.upload_status)
-
-    self.upload_toggle_button_data_collection = QPushButton("Start Upload")
-    self.upload_toggle_button_data_collection.setCheckable(True)
-    self.upload_toggle_button_data_collection.clicked.connect(self.toggle_upload_to_mongo)
-    rf.addWidget(self.upload_toggle_button_data_collection)
-
     rf.addWidget(QLabel("Currently Collected Data:"))
     self.mongo_output_area = QTextEdit()
     self.mongo_output_area.setReadOnly(True)
-    self.mongo_output_area.setFixedHeight(150)
+    self.mongo_output_area.setFixedHeight(300)
     rf.addWidget(self.mongo_output_area)
 
     self.mongo_data_labels = {}
@@ -176,56 +177,16 @@ def update_data_collection_page(self):
     if not hasattr(self, 'latest_data'):
         return
     try:
-        latest_text = self.mongo_output_area.toPlainText().strip()
-
-        # Get the last non-empty line
-        last_line = next(reversed([line for line in latest_text.splitlines() if line.strip()]), None)
-        if not last_line:
-            return
-
-        # Parse it into a dictionary
-        data = ast.literal_eval(last_line)
-
-        # Save latest data
-        self.latest_data = data
-
-        # Create new labels dynamically on first run
-        if not self.mongo_data_labels:
-            for key, value in data.items():
-                field_layout = QHBoxLayout()
-                key_label = QLabel(f"{key}:")
-                key_label.setFixedWidth(100)
-
-                val_label = QLabel(str(value))
-                val_label.setStyleSheet("font-weight: bold")
-
-                field_layout.addWidget(key_label)
-                field_layout.addWidget(val_label)
-
-                self.data_labels_layout.addLayout(field_layout)
-                self.mongo_data_labels[key] = val_label
-
-        else:
-            # Update existing labels
-            for key, val in data.items():
-                if key in self.mongo_data_labels:
-                    val_str = f"{val:.1f}" if isinstance(val, float) and not val.is_integer() else str(int(val)) if isinstance(val, float) else str(val)
-                    self.mongo_data_labels[key].setText(val_str)
-
-
         # Update count
         self.upload_label_counts[self.current_activity] = self.upload_label_counts.get(self.current_activity, 0) + 1
 
         # Duration
-        elapsed = int(time.time() - self.upload_start_time)
+        if self.upload_start_time is not None:
+            elapsed = int(time.time() - self.upload_start_time)
+        else:
+            elapsed = 0
         self.upload_duration_label.setText(f"Duration: {elapsed}s")
 
-        # Percentages
-        total = sum(self.upload_label_counts.values())
-        breakdown = ", ".join([
-            f"{label}: {int(100 * count / total)}%" for label, count in self.upload_label_counts.items()
-        ])
-        self.activity_distribution_label.setText(f"Activity Breakdown: {breakdown}")
     except Exception as e:
         print(f"Error updating data collection page: {e}")
 

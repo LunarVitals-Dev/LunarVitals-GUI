@@ -139,8 +139,9 @@ class IntroPage(QWidget):
 
 
 class AstronautMonitor(QMainWindow):
-    # NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A"
+    # NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A" #Test device
     NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    # NORDIC_DEVICE_MAC = "CE:E6:D8:57:34:F0" #Final device 
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -283,8 +284,6 @@ class AstronautMonitor(QMainWindow):
             status = "Normal"
         elif SPO2 > 90:
             status = "Concerning"
-        elif SPO2 > 85:
-            status = "Low"
         elif SPO2 == 0:
             status = "Detecting"
         else:
@@ -302,35 +301,44 @@ class AstronautMonitor(QMainWindow):
 
                 
     def update_prediction_display(self, prediction, confidence=None):
-        print(f"Prediction: {prediction}")
-        self.activity_label.setText(f"Current Activity: \n {prediction}")
-        self.activity_label_data_collection.setText(f"Current Activity: {prediction}")
-        if confidence is not None:
-            self.confidence_label.setText(f"Confidence: {confidence:.2%}")
-            self.confidence_label_data_collection.setText(f"Confidence: {confidence:.2%}")
+        self.activity_label.setText(f"Current Activity:\n{prediction}")
+        self.confidence_label.setText(f"Confidence: {confidence:.0%}")
         
     def on_new_sensor_data(self):
-        if len(self.pulse_BPM) == 0:      
+        if len(self.pulse_BPM) == 0:
             return "No Data", 0
 
-        avg_bpm    = np.mean(self.pulse_BPM)   if self.pulse_BPM    else 0
-        avg_brpm   = np.mean(self.brpm)        if self.brpm         else 0
-        body_temp  = np.mean(self.obj_temp)    if self.obj_temp     else 0.0
-        step_rate  = np.mean(self.step_rate)   if self.step_rate    else 0
-        rotate_rate= np.mean(self.rotate_rate) if self.rotate_rate  else 0
+        # 1) Compute your feature vector
+        avg_bpm     = np.mean(self.pulse_BPM)    if self.pulse_BPM    else 0
+        avg_brpm    = np.mean(self.brpm)         if self.brpm         else 0
+        body_temp   = np.mean(self.obj_temp)     if self.obj_temp     else 0.0
+        step_rate   = np.mean(self.step_rate)    if self.step_rate    else 0
+        rotate_rate = np.mean(self.rotate_rate)  if self.rotate_rate  else 0
 
-        # scale, predict, decode
+        # 2) Scale & predict
         X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
         X_scaled = self.scaler.transform(X_new)
-        probs    = self.model.predict(X_scaled)
-        idx      = np.argmax(probs, axis=1)[0]
-        label    = self.encoder.categories_[0][idx]
-        confidence = float(probs[0, idx])
-        
-        self.predicted_activity = label
+        raw_probs = self.model.predict(X_scaled)[0]           
+        labels    = self.encoder.categories_[0]         
 
-        # update the UI
-        self.update_prediction_display(label, confidence) 
+        # 3) Build full confidence dict
+        conf_dict = {lbl: float(p) for lbl, p in zip(labels, raw_probs)}
+
+        # 4) Extract the best‐predicted label + its confidence
+        best_idx    = int(raw_probs.argmax())
+        best_label  = labels[best_idx]
+        best_conf   = raw_probs[best_idx]
+        self.predicted_activity = best_label
+
+        self.update_prediction_display(best_label, best_conf)
+
+        items = [f"{lbl}: {conf_dict[lbl]:.0%}" for lbl in labels]
+        first_line  = ", ".join(items[:3])
+        second_line = ", ".join(items[3:])
+
+        conf_str = f"{first_line}\n{second_line}"
+        self.confidence_label_data_collection.setText(conf_str)
+
         
     VALID_RANGES = {
         "s_rate":    (0, 205),
@@ -437,6 +445,9 @@ class AstronautMonitor(QMainWindow):
         self.data_collection_page = QWidget()
         
         self.init_home_page()
+        
+        self.blood_oxygen_label = self.data_labels["PulseSensor"]["SPO2"]
+        
         self.init_data_page() 
         self.init_about_page()
         self.init_data_collection_page()
@@ -470,13 +481,15 @@ class AstronautMonitor(QMainWindow):
         total = sum(durations)
         fractions = [(d / total if total else 0.0) for d in durations]
         
+        self.activityAxes.clear()
+        
         self.activityAxes.set_autoscale_on(False)
         
         self.activityAxes.set_xlim(-0.5, len(self.activities) - 0.5)
         self.activityAxes.set_ylim(0, 1)
         
         x = np.arange(len(self.activities))
-        self.activityAxes.bar(x, fractions, width=0.6)
+        self.activityAxes.bar(x, fractions, width=0.6, color="#213448", edgecolor="white")    
         self.activityAxes.set_xticks(x)
         self.activityAxes.set_xticklabels(
             self.activities, rotation=45, ha="right", color="white", fontweight="bold"
@@ -520,10 +533,7 @@ class AstronautMonitor(QMainWindow):
         
         self.data_labels[sensor_name] = {}
         for key, display_name in config['measurements'].items():
-            if (key != "SPO2"):
-                value_label = QLabel(f"N/A {display_name}")
-            else:
-                value_label = QLabel(f"{display_name}: N/A")
+            value_label = QLabel(f"N/A {display_name}")
                 
             value_label.setProperty("class", "sensor-value")
             self.data_labels[sensor_name][key] = value_label
@@ -684,6 +694,9 @@ class AstronautMonitor(QMainWindow):
                     continue
 
                 raw = self.latest_data[field]
+                
+                if field == "SPO2":
+                    continue
 
                 if isinstance(raw, float):
                     if raw.is_integer():
@@ -694,10 +707,7 @@ class AstronautMonitor(QMainWindow):
                     s = str(raw)
 
                 label = self.data_labels[sensor_name][field]
-                if (field != "SPO2"):
-                    label.setText(f"{s} {disp}")
-                else:
-                    label.setText(f"{disp}: {s}")
+                label.setText(f"{s} {disp}")
                 
 
     def update_data_collection_page(self):
