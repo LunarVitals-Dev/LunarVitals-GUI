@@ -317,12 +317,11 @@ class AstronautMonitor(QMainWindow):
         # 1) Compute your feature vector
         avg_bpm     = np.mean(self.pulse_BPM)    if self.pulse_BPM    else 0
         avg_brpm    = np.mean(self.brpm)         if self.brpm         else 0
-        body_temp   = np.mean(self.obj_temp)     if self.obj_temp     else 0.0
         step_rate   = np.mean(self.step_rate)    if self.step_rate    else 0
         rotate_rate = np.mean(self.rotate_rate)  if self.rotate_rate  else 0
 
         # 2) Scale & predict
-        X_new    = np.array([[avg_bpm, avg_brpm, body_temp, step_rate, rotate_rate]])
+        X_new    = np.array([[avg_bpm, avg_brpm, step_rate, rotate_rate]])
         X_scaled = self.scaler.transform(X_new)
         raw_probs = self.model.predict(X_scaled)[0]           
         labels    = self.encoder.categories_[0]         
@@ -347,14 +346,10 @@ class AstronautMonitor(QMainWindow):
         conf_str = f"{first_line}\n{second_line}"
         self.confidence_label_data_collection.setText(conf_str)
 
-        
     VALID_RANGES = {
         "s_rate":    (0, 205),
         "r_rate":    (0, 210),
-        "OCelsius":  (0, 45.0),
-        "Value_mV":  (0, 3300),
         "pulse_BPM": (0, 180),
-        "avg_mV":    (0, 3300),
         "BRPM":      (0, 45)
     }
 
@@ -400,7 +395,7 @@ class AstronautMonitor(QMainWindow):
 
             # — Temperatures
             ac = data["ACelsius"]
-            oc = self.clamp("OCelsius", data["OCelsius"])
+            oc = data["OCelsius"]
             self.amb_temp.append(ac)
             self.obj_temp.append(oc)
 
@@ -408,14 +403,14 @@ class AstronautMonitor(QMainWindow):
             self.pressure.append(data["hPa"])
 
             # — Pulse
-            mv  = self.clamp("Value_mV",  data["Value_mV"])
+            mv  = data["Value_mV"]
             bpm = self.clamp("pulse_BPM", data["pulse_BPM"])
             self.pulse.append(mv)
             self.pulse_BPM.append(bpm)
 
             # — Respiration
-            avg = self.clamp("avg_mV", data["avg_mV"])
-            br  = self.clamp("BRPM",   data["BRPM"])
+            avg = data["avg_mV"]
+            br  = self.clamp("BRPM", data["BRPM"])
             self.resp.append(avg)
             self.brpm.append(br)
             self.timestamps.append(now_ts)

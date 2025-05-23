@@ -10,6 +10,7 @@ from tensorflow.keras import layers
 from pymongo import MongoClient
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
 
 def connect_to_mongodb():
     MONGODB_URI = "mongodb+srv://LunarVitals:lunarvitals1010@peakfitness.i5blp.mongodb.net/"
@@ -49,7 +50,6 @@ def process_training_data(data):
     df = df.rename(columns={
         "pulse_BPM": "avg_bpm",
         "BRPM":      "avg_resp",
-        "OCelsius":  "body_temp",
         "s_rate":    "step_rate",
         "r_rate":    "rotation_rate"
     })
@@ -59,7 +59,6 @@ def process_training_data(data):
         "activity_id",
         "avg_bpm",
         "avg_resp",
-        "body_temp",
         "step_rate",
         "rotation_rate"
     ]]
@@ -70,8 +69,8 @@ def process_training_data(data):
 
 def prepare_features_labels(df):
     # Extract features and labels
-    X = df[['avg_bpm','avg_resp', 'body_temp','step_rate','rotation_rate']].values
-    y = df['activity_id'].values.reshape(-1, 1)    
+    X = df[['avg_bpm','avg_resp', 'step_rate','rotation_rate']].values
+    y_raw = df['activity_id'].values     
 
     # Feature scaling
     scaler = StandardScaler()
@@ -79,9 +78,9 @@ def prepare_features_labels(df):
 
     # One-hot encoding of labels
     encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
-    y_encoded = encoder.fit_transform(y)
+    y_encoded = encoder.fit_transform(y_raw.reshape(-1, 1))
 
-    return X_scaled, y_encoded, scaler, encoder
+    return X_scaled, y_encoded, scaler, encoder, y_raw
 
 def train_activity_model():
     """Fetch training data, process it, train the model, and save artifacts."""
@@ -95,14 +94,23 @@ def train_activity_model():
         print("Processed training DataFrame is empty. Exiting training.")
         return None, None, None
 
-    X, y, scaler, encoder = prepare_features_labels(df)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X, y, scaler, encoder, y_raw = prepare_features_labels(df)
+    classes = encoder.categories_[0]
+    weights = compute_class_weight('balanced', classes=classes, y=y_raw)
+    class_weight_dict = {idx: float(w) for idx, w in enumerate(weights)}
+    print("Class weights:", class_weight_dict) #error from rare classes will influence the gradient more
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
     num_classes = y_train.shape[1]
     model = tf.keras.Sequential([
-        layers.InputLayer(shape=(5,)), 
+        layers.InputLayer(shape=(4,)),
+        layers.BatchNormalization(),
+        layers.Dense(128, activation='relu'),
+        layers.Dense(96,  activation='relu'),
         layers.Dense(64, activation='relu'),
-        layers.Dense(32, activation='relu'),
         layers.Dense(num_classes, activation='softmax')
     ])
 
@@ -111,9 +119,19 @@ def train_activity_model():
                   metrics=['accuracy'])
 
     print("Starting training...")
-    model.fit(X_train, y_train, epochs=500, batch_size=32, validation_split=0.2, verbose=1)
+    model.fit(X_train, y_train, epochs=500, batch_size=32, validation_split=0.2, class_weight=class_weight_dict, verbose=1)
     loss, acc = model.evaluate(X_test, y_test, verbose=1)
     print(f"Test Loss: {loss:.4f}, Test Accuracy: {acc:.4f}")
+    
+    base_acc = model.evaluate(X_test, y_test, verbose=0)[1]
+    
+    feature_names = ['avg_bpm', 'avg_resp', 'step_rate', 'rotation_rate']
+
+    for i, name in enumerate(feature_names):
+        X_perm = X_test.copy()
+        np.random.shuffle(X_perm[:, i])           
+        acc = model.evaluate(X_perm, y_test, verbose=0)[1]
+        print(f"{name:<15}  acc = {base_acc - acc:.4f}") # how badly accuracy suffers without it
 
     # Save the trained model and preprocessing objects for later use in the PyQt app
     model.save("activity_model_mongodb.keras")
