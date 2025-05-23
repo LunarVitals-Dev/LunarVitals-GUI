@@ -139,7 +139,6 @@ class IntroPage(QWidget):
 
 
 class AstronautMonitor(QMainWindow):
-    # NORDIC_DEVICE_MAC = "DD:81:76:1A:A4:6A" #Test device
     NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
     # NORDIC_DEVICE_MAC = "CE:E6:D8:57:34:F0" #Final device 
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
@@ -171,7 +170,13 @@ class AstronautMonitor(QMainWindow):
         
         self.activities = ACTIVITY_LABELS
         
-        self.activity_tracker = ActivityTracker(self.activities)
+        self.activity_tracker = ActivityTracker()
+
+        self.activity_tracker.set_astronaut(
+            age=self.astronaut_age,
+            gender=self.astronaut_gender,
+            weight=self.astronaut_weight     
+        )
 
         self.init_data_collection_page()
         self.model = None
@@ -221,6 +226,7 @@ class AstronautMonitor(QMainWindow):
         self.prediction_timer = QTimer(self)
         self.prediction_timer.timeout.connect(self.on_new_sensor_data)
         self.prediction_timer.timeout.connect(self.updateActivityChart)
+        self.prediction_timer.timeout.connect(self.update_oxygen_consumed)
         self.prediction_timer.start(5000) 
 
         self.current_chart_type = None
@@ -329,6 +335,8 @@ class AstronautMonitor(QMainWindow):
         best_label  = labels[best_idx]
         best_conf   = raw_probs[best_idx]
         self.predicted_activity = best_label
+        
+        self.activity_tracker.update(best_label)
 
         self.update_prediction_display(best_label, best_conf)
 
@@ -343,7 +351,7 @@ class AstronautMonitor(QMainWindow):
     VALID_RANGES = {
         "s_rate":    (0, 205),
         "r_rate":    (0, 210),
-        "OCelsius":  (10.0, 45.0),
+        "OCelsius":  (0, 45.0),
         "Value_mV":  (0, 3300),
         "pulse_BPM": (0, 180),
         "avg_mV":    (0, 3300),
@@ -467,9 +475,11 @@ class AstronautMonitor(QMainWindow):
             f"Mission Length: \n {hrs:02d}:{mins:02d}:{secs:02d}"
         )
         
+    def update_oxygen_consumed(self):
+        oxy = self.activity_tracker.total_oxy()
+        self.oxygen_consumed_label.setText(f"Oxygen Consumed: \n {oxy:.1f} L")
+        
     def updateActivityChart(self):
-        leader = self.activity_tracker.update(self.predicted_activity)
-
         now = time.time()
         durations = []
         for act in self.activities:
@@ -492,7 +502,7 @@ class AstronautMonitor(QMainWindow):
         self.activityAxes.bar(x, fractions, width=0.6, color="#213448", edgecolor="white")    
         self.activityAxes.set_xticks(x)
         self.activityAxes.set_xticklabels(
-            self.activities, rotation=45, ha="right", color="white", fontweight="bold"
+            self.activities, rotation=45, ha="right", color="white", fontweight="bold", fontsize = 12
         )
         self.activityAxes.set_ylim(0, 1)
         self.activityAxes.set_ylabel("Fraction of Time", color="white")
@@ -639,7 +649,7 @@ class AstronautMonitor(QMainWindow):
 
         self.activityAxes.set_xticks(np.arange(len(self.activities)))
         self.activityAxes.set_xticklabels(
-            self.activities, rotation=45, ha="right", color="white", fontweight = "bold"
+            self.activities, rotation=45, ha="right", color="white", fontweight = "bold", fontsize = 12
         )
 
         self.activityAxes.set_ylabel("Fraction of Time", color="white")

@@ -1,50 +1,113 @@
-# data_collection_page.py
-
 from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTextEdit, QFrame, QGridLayout, QWidget
 )
-from PySide6.QtGui import QIcon
-from PySide6.QtCore import QSize
 import time
-import ast
-from typing import Optional
-from collections import Counter
+from typing import Optional, Dict, Tuple
+from collections import Counter, defaultdict
 
-ACTIVITY_LABELS = ["Idle", "Walking", "Lifting", "Crouching", "Skipping"]
+ACTIVITY_LABELS: Tuple[str, ...] = (
+    "Idle",
+    "Walking",
+    "Lifting",
+    "Crouching",
+    "Skipping",
+) 
+
+DEFAULT_METS: Dict[str, float] = {  
+    "Idle":      1.0,
+    "Walking":   3.8,
+    "Lifting":   4.0,
+    "Crouching": 3.5,
+    "Skipping":  8.0,
+}
 
 class ActivityTracker:
     """Keeps track of how long each activity runs, and reports the current leader."""
-    def __init__(self, activities: list[str]) -> None:
-        self.activities = activities
+    def __init__(self, mets: dict[str, float] | None = None) -> None:
+        self.mets = mets or DEFAULT_METS
+        self.activities = ACTIVITY_LABELS
         self.reset()
+        
+    def set_astronaut(self, *, age: int, gender: str, weight: float) -> None:
+        """Update demographic data (call once when the user selects an astronaut)."""
+        self.age = age
+        self.gender = gender
+        self.weight_kg = weight * 0.453592
 
     def reset(self) -> None:
         self._durations: Counter[str] = Counter()
         self._current: Optional[str] = None
         self._t_start: Optional[float] = None
+        self._oxygen_per_activity = defaultdict(float)
+        self._oxygen_total = 0.0
 
-    def update(self, activity: str) -> str:
+    def update(self, activity: str) -> None:
+        """
+        Call when activity updates.
+        Activity - pass in current activity
+        """
         now = time.time()
 
-        # first-ever call
+        # First-ever call
         if self._current is None:
-            self._current, self._t_start = activity, now
-            return activity
+            self._current   = activity
+            self._last_time = now
+            return
 
-        # activity changed → close out the old segment
-        if activity != self._current and self._t_start is not None:
-            self._durations[self._current] += now - self._t_start
-            self._current, self._t_start = activity, now
+        # Seconds since the *previous* update
+        dt = now - self._last_time
+        self._last_time = now                 
 
-        # find leader including the still-open segment
-        leader = self._current
-        leader_time = self._durations[leader] + (now - (self._t_start or now))
-        for act, dur in self._durations.items():
-            if dur > leader_time:
-                leader, leader_time = act, dur
+        # Accumulate for the activity that was active during dt
+        self._durations[self._current] += dt
+        self._add_oxygen(dt, self._current)
 
-        return leader
+        # If label changed, just switch—no extra accounting
+        if activity != self._current:
+            self._current = activity
+    
+    def total_oxy(self) -> float:
+        """
+        Return total liters of oxygen consumed
+        """
+        return self._oxygen_total
+    
+    def oxy_breakdown(self) -> dict[str, float]:
+        """
+        Return oxygen per activity
+        """
+        return dict(self._oxygen_per_activity)
+    
+    def _effective_met(self, activity: str) -> float:
+        base = self.mets.get(activity, DEFAULT_METS[activity])
+
+        # gender adjustment: 20 % lower for females
+        gender_factor = 0.8 if self.gender.lower().startswith("f") else 1.0
+
+        # age adjustment: −1 % per year above 30 
+        age_factor = max(0.6, 1.0 - 0.01 * max(0, self.age - 30))
+
+        return base * gender_factor * age_factor
+
+    def _add_oxygen(self, dt: float, activity: str) -> None:
+        met = self._effective_met(activity)
+        # 3.5 mL/kg/min → L/min
+        rate_lpm = met * 3.5 * self.weight_kg / 1000.0
+        used = rate_lpm * dt / 60.0
+        self._oxygen_per_activity[activity] += used
+        self._oxygen_total += used
+
+    def _add_elapsed(self, now: float) -> None:
+        if self._current is None or self._t_start is None:
+            return
+        dt = now - self._t_start
+
+        # Find total time of prev activity
+        self._durations[self._current] += dt
+
+        # Accumulate oxygen of new activity segment
+        self._add_oxygen(dt, self._current)
 
 def init_data_collection_page(self):
     self.data_collection_page.setObjectName("dataCollectionPage")
@@ -117,10 +180,9 @@ def init_data_collection_page(self):
     rf.addWidget(QLabel("Select Activity Label:"))
 
     self.label_buttons = {}
-    activity_labels = ACTIVITY_LABELS
     button_layout = QGridLayout()
 
-    for i, label in enumerate(activity_labels):
+    for i, label in enumerate(ACTIVITY_LABELS):
         button = QPushButton()
         button.setCheckable(True)
         button.setText(label)
