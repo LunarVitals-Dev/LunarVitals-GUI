@@ -69,7 +69,7 @@ def process_training_data(data):
 
 def prepare_features_labels(df):
     # Extract features and labels
-    X = df[['avg_bpm','avg_resp', 'step_rate','rotation_rate']].values
+    X = df[['avg_bpm','avg_resp','step_rate','rotation_rate']].values
     y_raw = df['activity_id'].values     
 
     # Feature scaling
@@ -97,8 +97,14 @@ def train_activity_model():
     X, y, scaler, encoder, y_raw = prepare_features_labels(df)
     classes = encoder.categories_[0]
     weights = compute_class_weight('balanced', classes=classes, y=y_raw)
-    class_weight_dict = {idx: float(w) for idx, w in enumerate(weights)}
-    print("Class weights:", class_weight_dict) #error from rare classes will influence the gradient more
+
+    # round each weight to 4 decimals and cast to float
+    class_weight_dict = {
+        cls: round(float(w), 4)
+        for cls, w in zip(classes, weights)
+    }
+
+    print("Class weights by name:", class_weight_dict)
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -119,7 +125,7 @@ def train_activity_model():
                   metrics=['accuracy'])
 
     print("Starting training...")
-    model.fit(X_train, y_train, epochs=500, batch_size=32, validation_split=0.2, class_weight=class_weight_dict, verbose=1)
+    model.fit(X_train, y_train, epochs=300, batch_size=32, validation_split=0.2, class_weight=class_weight_dict, verbose=1)
     loss, acc = model.evaluate(X_test, y_test, verbose=1)
     print(f"Test Loss: {loss:.4f}, Test Accuracy: {acc:.4f}")
     

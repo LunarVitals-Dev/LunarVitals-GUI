@@ -18,7 +18,7 @@ import logging
 import joblib
 import datetime
 from bluetooth import NordicBLEWorker
-from PySide6.QtWidgets import QLabel, QComboBox, QTextEdit, QFrame
+from PySide6.QtWidgets import QLabel, QComboBox, QFrame, QButtonGroup
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from data_collection_page import (
@@ -139,8 +139,8 @@ class IntroPage(QWidget):
 
 
 class AstronautMonitor(QMainWindow):
-    NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
-    # NORDIC_DEVICE_MAC = "CE:E6:D8:57:34:F0" #Final device 
+    # NORDIC_DEVICE_MAC = "C0:0F:DD:31:AC:91" #Main prototype
+    NORDIC_DEVICE_MAC = "CE:E6:D8:57:34:F0" #Final device 
     GATT_UUID = "00002A3D-0000-1000-8000-00805F9B34FB"
 
 
@@ -350,7 +350,7 @@ class AstronautMonitor(QMainWindow):
         "s_rate":    (0, 205),
         "r_rate":    (0, 210),
         "pulse_BPM": (0, 180),
-        "BRPM":      (0, 45)
+        "BRPM":      (0, 60)
     }
 
     def clamp(self, field: str, val: float) -> float:
@@ -742,33 +742,44 @@ class AstronautMonitor(QMainWindow):
         # Create a horizontal layout to center the activity widget
         centered_layout = QHBoxLayout()
         centered_layout.addStretch()
-        # centered_layout.addWidget(activity_widget)
-        centered_layout.addStretch()
 
         layout.addLayout(centered_layout)
 
         buttons_widget = QWidget()
         buttons_layout = QHBoxLayout()
         buttons_widget.setLayout(buttons_layout)
-        self.pulse_button = QPushButton("Pulse")
-        self.resp_button = QPushButton("Respiratory")
+        self.pulse_button = QPushButton("Pulse")    
+        self.pulse_button.setCheckable(True)
+        self.resp_button  = QPushButton("Respiratory")
+        self.resp_button .setCheckable(True)
         self.accel_button = QPushButton("Accelerometer")
-        self.gyro_button = QPushButton("Gyroscope")
-        self.temp_button = QPushButton("Temperature")
-        self.pres_button = QPushButton("Pressure")
-        buttons_layout.addWidget(self.pulse_button)
-        buttons_layout.addWidget(self.resp_button)
-        buttons_layout.addWidget(self.accel_button)
-        buttons_layout.addWidget(self.gyro_button)
-        buttons_layout.addWidget(self.temp_button)
-        buttons_layout.addWidget(self.pres_button)
+        self.accel_button.setCheckable(True)
+        self.gyro_button  = QPushButton("Gyroscope")
+        self.gyro_button .setCheckable(True)
+        self.temp_button  = QPushButton("Temperature")
+        self.temp_button .setCheckable(True)
+        self.pres_button  = QPushButton("Pressure")
+        self.pres_button .setCheckable(True)
+        
+        for btn in (self.pulse_button, self.resp_button,
+            self.accel_button, self.gyro_button,
+            self.temp_button,  self.pres_button):
+            buttons_layout.addWidget(btn)
+
+        self.sensor_group = QButtonGroup(self)
+        self.sensor_group.setExclusive(True)
+        for btn in (self.pulse_button, self.resp_button,
+                    self.accel_button, self.gyro_button,
+                    self.temp_button,  self.pres_button):
+            self.sensor_group.addButton(btn)
 
         self.pulse_button.clicked.connect(lambda: self.update_chart('pulse'))
-        self.resp_button.clicked.connect(lambda: self.update_chart('resp'))
+        self.resp_button .clicked.connect(lambda: self.update_chart('resp'))
         self.accel_button.clicked.connect(lambda: self.update_chart('accel'))
-        self.gyro_button.clicked.connect(lambda: self.update_chart('gyro'))
-        self.temp_button.clicked.connect(lambda: self.update_chart('temp'))
-        self.pres_button.clicked.connect(lambda: self.update_chart('pressure'))
+        self.gyro_button .clicked.connect(lambda: self.update_chart('gyro'))
+        self.temp_button .clicked.connect(lambda: self.update_chart('temp'))
+        self.pres_button .clicked.connect(lambda: self.update_chart('pressure'))
+
         layout.addWidget(buttons_widget)
 
         self.chart_widget = pg.PlotWidget()
@@ -777,27 +788,50 @@ class AstronautMonitor(QMainWindow):
         layout.addWidget(self.chart_widget)
         self.data_page.setLayout(layout)
         
-    # about page that explains the project and our mission
     def init_about_page(self):
         layout = QVBoxLayout()
+
         about_label = QLabel("About the Project")
         about_label.setObjectName("aboutTitle")
         about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(about_label)
-        image_label = QLabel()
-        pixmap = QPixmap("assets/group.png")
-        image_label.setPixmap(pixmap.scaledToWidth(900, Qt.SmoothTransformation))
-        image_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(image_label)
-        about_text = QLabel("Lunar extravehicular activities (EVAs) are long missions that require astronauts to perform various tasks under extreme conditions with limited consumables. To combat the safety risk of over-depleting critical resources, we created a wearable biomonitoring system that measures, analyzes, and predicts physiological signals: including heart rate, respiration rate, body temperature, and step count. These signals are collected by a suite of sensors, which collects the data, filters it, and transmits it via Bluetooth to a database, where it is displayed here. Our solution aims to improve mission safety and efficiency and serve as a foundation for support in human space exploration.")
+
+        images_layout = QHBoxLayout()
+        images_layout.setSpacing(20)  # space between images
+
+        paths = [
+            "assets/Looking.jpg",
+            "assets/group.png",
+            "assets/Sitting.jpg",
+            "assets/Strap.jpg",
+        ]
+        for p in paths:
+            img = QLabel()
+            pix = QPixmap(p)
+
+            scaled = pix.scaled(
+                300, 300,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation
+            )
+            img.setPixmap(scaled)
+            img.setAlignment(Qt.AlignCenter)
+            img.setObjectName("aboutImage")
+            images_layout.addWidget(img)
+
+        layout.addLayout(images_layout)
+
+        # your existing about text…
+        about_text = QLabel(
+            "Lunar Extravehicular Activities (EVAs) require astronauts to perform physically strenuous tasks which accelerate the depletion of critical life support consumables (e.g.,  oxygen), creating a safety risk when resource status is unknown. We have developed a compact wearable physiological monitoring system along with a desktop application and machine learning model that enables enhanced astronaut autonomy."
+        )
         about_text.setObjectName("aboutText")
-        about_text.setWordWrap(True)  # Enable word wrapping
+        about_text.setWordWrap(True)
         layout.addWidget(about_text)
 
         self.about_page = QWidget()
-        self.about_page.setLayout(layout)
         self.about_page.setObjectName("aboutPage")
-
+        self.about_page.setLayout(layout)
    
 
     def setup_chart(self, chart_widget, title):
@@ -920,8 +954,6 @@ class AstronautMonitor(QMainWindow):
                     pulse_np = np.array(self.pulse)
                     n = min(len(relative_timestamps), len(pulse_np))
                     self.pulse_plot.setData(relative_timestamps[:n], pulse_np[:n])
-                else:
-                    logging.warning("pulse_plot not initialized or no pulse data.")
             
             elif self.current_chart_type == 'resp':
                 if self.resp and self.timestamps:
@@ -1005,7 +1037,7 @@ class AstronautMonitor(QMainWindow):
         home_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.home_page))
         right_layout.addWidget(home_button)
         
-        data_button = QPushButton("Sensors")
+        data_button = QPushButton("Graphs")
         data_button.setObjectName("navButton")
         data_button.clicked.connect(lambda: self.central_stack.setCurrentWidget(self.data_page))
         right_layout.addWidget(data_button)

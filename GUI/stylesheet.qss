@@ -91,18 +91,31 @@ QComboBox QAbstractItemView {
     selection-color: black;
 }
 
-/* Button Styling */
+/* default look */
 QPushButton {
     background-color: #213448;
-    border-radius: 10px;
-    font-size: 20px;
-    color: white;
     border: none;
-    padding: 10px;
+    border-radius: 8px;
+    color: white;
+    padding: 8px 16px;
+    font-size: 16px;
 }
 
+/* hover */
 QPushButton:hover {
-    background-color: #547792;
+    background-color: #6a8a9f;
+}
+
+/* when checked (active) */
+QPushButton:checked {
+    border: 2px solid #008000;      /* green border */
+    background-color: #213448;      /* keep same bg if you like */
+}
+
+/* pressed, keep consistent */
+QPushButton:pressed, QPushButton:checked:pressed {
+    background-color: #213448;
+    color: white;
 }
 
 /* Legend for Chart */
@@ -230,26 +243,37 @@ QComboBox#introForm QAbstractItemView {
     background-color: #547792;
 }
 
-#aboutPage {
-    background-color: #547792; /* White background for consistency */
-    padding: 10px; /* Add padding around the content */
+/* ── About Page Container ───────────────────────────────────── */
+QWidget#aboutPage {
+    background-color: #547792;   /* same blue as your main window */
 }
 
-#aboutTitle {
+/* ── Page Title ────────────────────────────────────────────── */
+QLabel#aboutTitle {
     font-size: 36px;
     font-weight: bold;
-    color: #213448; /* Dark blue color for the title */
+    color: white;              
     text-align: center;
 }
 
-#aboutText {
+QLabel#aboutImage {
+    border: 2px solid #062a61;   /* blue accent */
+    border-radius: 10px;
+    background-color: #547792;  
+    padding: 5px;
+    margin: 10px;             
+}
+
+/* ── About Text Block ──────────────────────────────────────── */
+QLabel#aboutText {
     font-size: 18px;
-    color: #333333; /* Dark gray text for readability */
-    line-height: 1.6; /* Improve readability with proper line spacing */
-    padding: 10px;
-    border: 2px solid #4a90e2; /* Blue border to match the theme */
-    border-radius: 10px; /* Rounded corners for a clean look */
-    background-color: #f5f7fa; /* Light gray background for the text area */
+    color: white;          
+    line-height: 1.6;
+    padding: 15px;
+    border: 2px solid #062a61;   
+    border-radius: 10px;
+    background-color: #547792;
+    margin-top: 20px;
 }
 
 #bloodOxygenLabel {
