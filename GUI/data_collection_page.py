@@ -10,21 +10,19 @@ ACTIVITY_LABELS: Tuple[str, ...] = (
     "Idle",
     "Walking",
     "Lifting",
-    "Crouching",
     "Skipping",
 ) 
 
 DEFAULT_METS: Dict[str, float] = {  
     "Idle":      1.0,
-    "Walking":   3.8,
+    "Walking":   3.5,
     "Lifting":   4.0,
-    "Crouching": 3.5,
     "Skipping":  8.0,
 }
 
 class ActivityTracker:
     """Keeps track of how long each activity runs, and reports the current leader."""
-    def __init__(self, mets: dict[str, float] | None = None) -> None:
+    def __init__(self, mets: Optional[Dict[str, float]] = None) -> None:
         self.mets = mets or DEFAULT_METS
         self.activities = ACTIVITY_LABELS
         self.reset()

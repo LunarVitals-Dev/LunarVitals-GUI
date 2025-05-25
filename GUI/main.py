@@ -791,10 +791,22 @@ class AstronautMonitor(QMainWindow):
     def init_about_page(self):
         layout = QVBoxLayout()
 
-        about_label = QLabel("About the Project")
-        about_label.setObjectName("aboutTitle")
-        about_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(about_label)
+        mission_label = QLabel("Mission Statement")
+        mission_label.setObjectName("aboutTitle")
+        mission_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(mission_label)
+
+        mission_text = QLabel(
+            "Lunar Extravehicular Activities (EVAs) require astronauts to perform physically strenuous tasks which accelerate the depletion of critical life support consumables (e.g., oxygen), creating a safety risk when resource status is unknown. We have developed a compact wearable physiological monitoring system along with a desktop application and machine learning model that enables enhanced astronaut autonomy.\n\nDirect physiological monitoring is conducted through chest and finger mounted sensors that capture real time data (e.g., heart rate, blood oxygen, respiration rate, motion, and body temperature). All sensor streams feed into a central MCU, which processes all the data and transmits it over Bluetooth. It then runs an ML model which can classify the astronaut's activity and assess their task capacity before consumables run out."
+        )
+        mission_text.setObjectName("aboutText")
+        mission_text.setWordWrap(True)
+        layout.addWidget(mission_text)
+
+        team_label = QLabel("Meet the Team")
+        team_label.setObjectName("aboutTitle")
+        team_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(team_label)
 
         images_layout = QHBoxLayout()
         images_layout.setSpacing(20)  # space between images
@@ -821,17 +833,10 @@ class AstronautMonitor(QMainWindow):
 
         layout.addLayout(images_layout)
 
-        # your existing about text…
-        about_text = QLabel(
-            "Lunar Extravehicular Activities (EVAs) require astronauts to perform physically strenuous tasks which accelerate the depletion of critical life support consumables (e.g.,  oxygen), creating a safety risk when resource status is unknown. We have developed a compact wearable physiological monitoring system along with a desktop application and machine learning model that enables enhanced astronaut autonomy."
-        )
-        about_text.setObjectName("aboutText")
-        about_text.setWordWrap(True)
-        layout.addWidget(about_text)
-
         self.about_page = QWidget()
         self.about_page.setObjectName("aboutPage")
         self.about_page.setLayout(layout)
+
    
 
     def setup_chart(self, chart_widget, title):
