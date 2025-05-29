@@ -66,7 +66,7 @@ class NordicBLEWorker(QThread):
                             logging.error(f"Error during read: {e}")
                             break  # Drop to reconnect attempt
 
-                        await asyncio.sleep(1)
+                        await asyncio.sleep(0.1)
 
             except Exception as e:
                 logging.error(f"BLE connection error: {e}")

@@ -115,7 +115,6 @@ def train_activity_model():
         layers.InputLayer(shape=(4,)),
         layers.BatchNormalization(),
         layers.Dense(128, activation='relu'),
-        layers.Dense(96,  activation='relu'),
         layers.Dense(64, activation='relu'),
         layers.Dense(num_classes, activation='softmax')
     ])

@@ -82,14 +82,13 @@ class IntroPage(QWidget):
         self.name_input = QLineEdit()
         self.name_input.setObjectName("introForm") 
         self.name_input.setPlaceholderText("Enter astronaut's name")
-        self.name_input.setText("Peak") # need to comment out
+        # self.name_input.setText("Peak") # need to comment out
         form_layout.addRow(QLabel("Name:"), self.name_input)
 
         # Gender selection
         self.gender_combo = QComboBox()
         self.gender_combo.setObjectName("introForm") 
         self.gender_combo.addItems(["Male", "Female", "Other"])
-        self.gender_combo.setCurrentText("Male") # need to comment out
         form_layout.addRow(QLabel("Gender:"), self.gender_combo)
 
         # Age input
@@ -98,7 +97,7 @@ class IntroPage(QWidget):
         self.age_input.setPlaceholderText("Enter astronaut's age")
         self.age_input.setValidator(QIntValidator(self)) 
         self.age_input.setMaxLength(2) 
-        self.age_input.setText("21") # need to comment out
+        # self.age_input.setText("21") # need to comment out
         form_layout.addRow(QLabel("Age:"), self.age_input)
         
         # Weight input
@@ -107,7 +106,7 @@ class IntroPage(QWidget):
         self.weight_input.setPlaceholderText("Enter astronaut's weight")
         self.weight_input.setValidator(QIntValidator(self)) 
         self.weight_input.setMaxLength(3) 
-        self.weight_input.setText("140") # need to comment out
+        # self.weight_input.setText("140") # need to comment out
         form_layout.addRow(QLabel("Weight:"), self.weight_input)
 
         layout.addWidget(form_widget)
@@ -251,24 +250,24 @@ class AstronautMonitor(QMainWindow):
         self.status_timer.start(1000) 
 
     def init_data_buffers(self):
-        self.maxlen = 50
+        self.maxlen = 100
         self.pulse = deque(maxlen=self.maxlen)
         self.resp = deque(maxlen=self.maxlen)
         self.accel_x = deque(maxlen=self.maxlen)
         self.accel_y = deque(maxlen=self.maxlen)
         self.accel_z = deque(maxlen=self.maxlen)
-        self.step_rate = deque(maxlen=5)
+        self.step_rate = deque(maxlen=10)
         self.gyro_x = deque(maxlen=self.maxlen)
         self.gyro_y = deque(maxlen=self.maxlen)
         self.gyro_z = deque(maxlen=self.maxlen)
-        self.rotate_rate = deque(maxlen=5)
+        self.rotate_rate = deque(maxlen=10)
         self.obj_temp = deque(maxlen=self.maxlen)
         self.amb_temp = deque(maxlen=self.maxlen)
         self.pressure = deque(maxlen=self.maxlen)
         self.timestamps = deque(maxlen=self.maxlen)
-        self.spo2_buffer = deque(maxlen=5)
-        self.brpm = deque(maxlen=5)
-        self.pulse_BPM = deque(maxlen=5)
+        self.spo2_buffer = deque(maxlen=10)
+        self.brpm = deque(maxlen=10)
+        self.pulse_BPM = deque(maxlen=10)
         
     def flush_mongo_buffer(self):
         if not self.mongo_upload_enabled:
@@ -949,7 +948,7 @@ class AstronautMonitor(QMainWindow):
             return
 
         if self.timestamps:
-            first_timestamp = self.timestamps[0]
+            first_timestamp = self.timestamps[-1]
             relative_timestamps = [t - first_timestamp for t in self.timestamps]
             relative_timestamps = np.array(relative_timestamps)
         
