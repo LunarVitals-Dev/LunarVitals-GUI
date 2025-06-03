@@ -349,6 +349,8 @@ class AstronautMonitor(QMainWindow):
         "s_rate":    (0, 205),
         "r_rate":    (0, 210),
         "pulse_BPM": (0, 180),
+        "Value_mV":  (0, 3300),
+        "avg_mV":    (0, 3300),
         "BRPM":      (0, 60)
     }
 
@@ -402,13 +404,13 @@ class AstronautMonitor(QMainWindow):
             self.pressure.append(data["hPa"])
 
             # — Pulse
-            mv  = data["Value_mV"]
+            mv  = self.clamp("Value_mV", data["Value_mV"])
             bpm = self.clamp("pulse_BPM", data["pulse_BPM"])
             self.pulse.append(mv)
             self.pulse_BPM.append(bpm)
 
             # — Respiration
-            avg = data["avg_mV"]
+            avg = self.clamp("avg_mV", data["avg_mV"])
             br  = self.clamp("BRPM", data["BRPM"])
             self.resp.append(avg)
             self.brpm.append(br)
@@ -433,6 +435,9 @@ class AstronautMonitor(QMainWindow):
             self.mongo_buffer.append(doc)
             
             self.flush_mongo_buffer()
+
+        except Exception as e:
+            logging.error(f"Error processing BLE data: {e}")
 
         except Exception as e:
             logging.error(f"Error processing BLE data: {e}")
