@@ -82,7 +82,6 @@ class IntroPage(QWidget):
         self.name_input = QLineEdit()
         self.name_input.setObjectName("introForm") 
         self.name_input.setPlaceholderText("Enter astronaut's name")
-        # self.name_input.setText("Peak") # need to comment out
         form_layout.addRow(QLabel("Name:"), self.name_input)
 
         # Gender selection
@@ -97,7 +96,6 @@ class IntroPage(QWidget):
         self.age_input.setPlaceholderText("Enter astronaut's age")
         self.age_input.setValidator(QIntValidator(self)) 
         self.age_input.setMaxLength(2) 
-        # self.age_input.setText("21") # need to comment out
         form_layout.addRow(QLabel("Age:"), self.age_input)
         
         # Weight input
@@ -106,7 +104,6 @@ class IntroPage(QWidget):
         self.weight_input.setPlaceholderText("Enter astronaut's weight")
         self.weight_input.setValidator(QIntValidator(self)) 
         self.weight_input.setMaxLength(3) 
-        # self.weight_input.setText("140") # need to comment out
         form_layout.addRow(QLabel("Weight:"), self.weight_input)
 
         layout.addWidget(form_widget)
@@ -165,7 +162,7 @@ class AstronautMonitor(QMainWindow):
         
         self.current_activity = "Idle"
        
-        self.predicted_activity = ""
+        self.predicted_activity = "Idle"
         
         self.activities = ACTIVITY_LABELS
         
@@ -451,6 +448,13 @@ class AstronautMonitor(QMainWindow):
         self.about_page = QWidget()
         self.data_collection_page = QWidget()
         
+        self.activity_to_img = {
+            "Idle":    "assets/spaceman.png",
+            "Lifting": "assets/spacemanlifting.png",
+            "Walking": "assets/spacemanwalking.png",
+            "Skipping": "assets/spacemanskipping.png",
+        }
+        
         self.init_home_page()
         
         self.blood_oxygen_label = self.data_labels["PulseSensor"]["SPO2"]
@@ -672,13 +676,14 @@ class AstronautMonitor(QMainWindow):
 
         self.mission_start = datetime.datetime.now()
 
-        center_image = QLabel()
-        center_image.setObjectName("centerImage")
-        center_image.setAlignment(Qt.AlignCenter)
-        pix = QPixmap("assets/spaceman.png")
-        scaled = pix.scaled(380, 570, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-        center_image.setPixmap(scaled)
-        layout.addWidget(center_image, 1, 2, 4, 1)
+        self.center_image = QLabel(alignment=Qt.AlignCenter, objectName="centerImage")
+
+        idle_pix   = QPixmap(self.activity_to_img["Idle"]).scaled(
+                        380, 570, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                    )
+        self.center_image.setPixmap(idle_pix)
+
+        layout.addWidget(self.center_image, 1, 2, 4, 1)
         
         layout.setContentsMargins(5,5,5,5)
 
@@ -717,6 +722,15 @@ class AstronautMonitor(QMainWindow):
 
                 label = self.data_labels[sensor_name][field]
                 label.setText(f"{s} {disp}")
+                
+        if hasattr(self, "predicted_activity"):
+            activity = self.predicted_activity
+            # fall back to Idle if we get something unexpected
+            img_path = self.activity_to_img.get(activity, self.activity_to_img["Idle"])
+            pix = QPixmap(img_path).scaled(
+                    380, 570, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                )
+            self.center_image.setPixmap(pix)
                 
 
     def update_data_collection_page(self):
